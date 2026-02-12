@@ -1,0 +1,14 @@
+{
+  "run_name": "baseline__20260210_1955",
+  "experiment": "baseline",
+  "created_at": "2026-02-10T19:56:02",
+  "place_query": "Sint Maarten",
+  "network_type": "drive",
+  "od_mode": "weighted_total",
+  "total_demand_vph": 8000.0,
+  "n_pairs": 250,
+  "msa_iters": 30,
+  "bpr_alpha": 0.15,
+  "bpr_beta": 4.0,
+  "notes": "Baseline run using weighted OD and saved artifacts for reproducibility."
+}
