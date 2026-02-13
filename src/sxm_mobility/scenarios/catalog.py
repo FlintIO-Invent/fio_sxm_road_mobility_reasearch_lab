@@ -65,3 +65,9 @@ class Closure(Scenario):
         if H.has_edge(self.u, self.v, self.key):
             H.remove_edge(self.u, self.v, self.key)
         return H
+
+
+@dataclass(frozen=True)
+class DemandReduction(Scenario):
+    pass
+    

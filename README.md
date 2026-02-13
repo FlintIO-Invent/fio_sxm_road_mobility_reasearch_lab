@@ -66,6 +66,9 @@ uv sync --extra geo --extra io --extra viz --extra dashboard --extra api --extra
 
 # 4) Run Graph Baselines for various experimentrs
 uv run python scripts/build_graph.py
+uv run python scripts/run_baseline.py
+uv run python scripts/run_scenarios.py
+
 
 # run vizualizer
 uv run streamlit run scripts/streamlit_app.py

@@ -32,8 +32,10 @@ class Settings(BaseSettings):
     # -----------------
     od_mode: str = "weighted_total"  # "random" | "weighted_total" | "zone" (later)
     od_n_pairs: int = 250
-    od_total_demand_vph: float = 8000.0
+    od_total_demand_vph: float = 25000.0
     od_seed: int = 42
+    od_factor: float = 1.0 # percentage of reduction for this scenario's helper
+
 
     # -----------------
     # Assignment (BPR/MSA)

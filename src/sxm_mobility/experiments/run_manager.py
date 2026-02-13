@@ -9,6 +9,7 @@ from typing import Any
 from sxm_mobility.config import settings
 
 
+
 def processed_dir() -> Path:
     return Path(settings.data_dir) / "processed"
 
@@ -104,3 +105,7 @@ def scenarios_path(run_path: Path) -> Path:
 
 def scenario_details_path(run_path: Path) -> Path:
     return run_path / "scenario_details.parquet"
+
+
+def solution_experiment_path(run_path: Path) -> Path:
+    return run_path / "results_solution_experiment_path.parquet"

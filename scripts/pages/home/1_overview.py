@@ -14,30 +14,10 @@ direction changes, capacity upgrades, incident/closure tests, and safety-focused
 a ranked list of short-term actions and longer-term infrastructure priorities. All outputs are delivered as 
 consultation-ready maps and visuals that the public and institutional partners can easily understand and validate.
 
-### What it Produces
-
-- **Baseline congestion map** – Top bottlenecks (edges) and critical intersections (Problem)
-- **Scenario ranking** – Which new links or route changes reduce delay the most (Solution)
 """)
 
 st.markdown("---")
 
-
-st.subheader("Experimental Design")
-st.write(
-    """
-In this model, intersections are represented as nodes and road segments as edges, and each edge is enriched with 
-operational properties such as free-flow travel time and capacity. Traffic demand is introduced as origin-destination 
-trips that represent vehicles moving through the network, and these trips are generated in a way that intentionally concentrates movement on the most relevant 
-corridors:origins and destinations are sampled with weights that favor high-importance parts of the network, so the simulations “zone in” on the roads people actually 
-rely on rather than spreading demand evenly across side streets. Once demand is applied, the model assigns trips through the network and updates each road segment’s travel 
-cost as flows increase, meaning heavily used or capacity-constrained segments become “heavier” and naturally emerge as the system’s critical bottlenecks. A baseline run establishes 
-current network performance and identifies the road segments that contribute the most to overall delay, after which scenario tests modify the network—such as increasing capacity on a corridor, 
-simulating a closure, or adding a connector—and rerun the same demand to measure how total delay and travel time change. This produces a ranked, evidence-based view of which interventions deliver the 
-strongest island-wide benefit and where targeted improvements are likely to have the greatest impact.
-    
-    """
-)
 
 st.subheader("Data sources")
 st.write("- OpenStreetMap (roads)\n- customizable origin destination demand / scenarios\n- (Optional) counts / speeds if available")

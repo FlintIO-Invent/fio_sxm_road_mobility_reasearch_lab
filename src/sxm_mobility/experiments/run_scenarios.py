@@ -1,20 +1,15 @@
 from __future__ import annotations
-
 import json
 from datetime import datetime
 from pathlib import Path
-
 import pandas as pd
 from loguru import logger
-
 from sxm_mobility.assignment.msa import msa_traffic_assignment
 from sxm_mobility.config import settings
 from sxm_mobility.io.osm_ingest import load_gpickle
-
 from sxm_mobility.scenarios.catalog import AddConnector, Closure, IncreaseCapacity
 from sxm_mobility.scenarios.runner import run_scenario
 from sxm_mobility.scenarios.evaluator import score_graph
-
 from sxm_mobility.demand.od_generation import load_od_parquet, save_od_parquet
 from sxm_mobility.demand.od_generation import generate_od_weighted_total
 from sxm_mobility.experiments.run_manager import (

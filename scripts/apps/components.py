@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Tuple
-
 import pandas as pd
 import plotly.graph_objects as go
 from shapely import wkt
@@ -28,9 +27,9 @@ def build_network_trace(edges_df: pd.DataFrame, max_edges: int | None = None) ->
         lon=lons_all,
         lat=lats_all,
         mode="lines",
-        line=dict(width=2),
+        line=dict(width=1),
         hoverinfo="skip",
-        name="Road network",
+        name="Road network",        
     )
 
 
@@ -95,17 +94,21 @@ def make_network_figure(
                 lon=lons_all,
                 lat=lats_all,
                 mode="lines",
-                line=dict(width=5),
+                line=dict(width=3, color="red"),
                 name="Top bottlenecks",
                 hoverinfo="text" if hovertext else "skip",
                 text=hovertext,
             )
+            
         )
 
     fig.update_layout(
+        #  The built-in plotly.js styles objects are:
         mapbox=dict(style="open-street-map", center=dict(lat=center_lat, lon=center_lon), zoom=12),
-        margin=dict(l=0, r=0, t=0, b=0),
+        margin=dict(l=0, r=0, t=40, b=0),
         height=750,
         showlegend=True,
     )
+
+    
     return fig
