@@ -20,11 +20,11 @@ st.markdown("---")
 
 
 st.subheader("Data sources")
-st.write("- OpenStreetMap (roads)\n- customizable origin destination demand / scenarios\n- (Optional) counts / speeds if available")
+st.write("- OpenStreetMap \n- customizable origin destination demand & scenarios\n- counts & speeds if available")
 
 st.subheader("How to use")
 st.write("Go to **Dashboards** → set filters in the sidebar → explore the map and KPIs.")
 
 st.markdown("---")
 st.subheader("Notes & limitations")
-st.info("This is a prototype. Capacities/speeds may be proxies until calibrated with local counts.")
+st.info("This is a prototype. Capacities & speeds may be proxies until calibrated with more local data.")

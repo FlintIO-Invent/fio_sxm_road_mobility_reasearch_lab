@@ -79,6 +79,47 @@ elif not dr_path.exists():
     st.warning(f"Demand-reduction results file not found: {dr_path}")
 else:
     dr = pd.read_parquet(dr_path)
-    st.subheader("Demand reduction sweep (Ideal vehicles on the road)")
+    st.subheader("⤵️ Demand reduction sweep (Ideal vehicles on the road)")
     st.dataframe(dr, use_container_width=True)
 
+
+# ---------------------------
+    # Conclusion (data-driven)
+    # ---------------------------
+    # Reconstruct baseline average delay if baseline row (0%) isn't included
+    if "reduction_pct" in dr.columns and (dr["reduction_pct"] == 0).any():
+        base_avg_delay = float(dr.loc[dr["reduction_pct"] == 0, "avg_delay_min"].iloc[0])
+    elif "delta_avg_delay_min" in dr.columns:
+        # base_avg_delay = avg_delay - (avg_delay - base_avg_delay)  => avg_delay - delta
+        base_avg_delay = float((dr["avg_delay_min"] - dr["delta_avg_delay_min"]).median())
+    else:
+        base_avg_delay = float(dr["avg_delay_min"].iloc[0])
+
+    best = dr.iloc[-1]
+    best_red = int(best["reduction_pct"])
+    best_avg_delay = float(best["avg_delay_min"])
+    improvement_pct = (base_avg_delay - best_avg_delay) / base_avg_delay * 100.0 if base_avg_delay > 0 else 0.0
+
+    # Pick a practical target for “acceptable peak-hour delay”
+    target_avg_delay_min = 2.0
+    hit = dr[dr["avg_delay_min"] <= target_avg_delay_min]
+    hit_text = ""
+    if not hit.empty:
+        first_hit = hit.iloc[0]
+        hit_red = int(first_hit["reduction_pct"])
+        hit_delay = float(first_hit["avg_delay_min"])
+        hit_text = (
+            f" In this sweep, the first point where average delay falls below {target_avg_delay_min:.1f} minutes "
+            f"per vehicle occurs at roughly {hit_red}% demand reduction (≈ {hit_delay:.2f} min/vehicle)."
+        )
+
+    st.subheader("❕ Conclusion (based on the current experiment)")
+    st.success(
+        f"The results show a strong and consistent improvement in congestion as peak-hour demand is reduced. "
+        f"Compared with the estimated baseline average delay of about {base_avg_delay:.2f} minutes per vehicle, "
+        f"reducing demand by {best_red}% lowers average delay to approximately {best_avg_delay:.2f} minutes per vehicle "
+        f"(an improvement of about {improvement_pct:.0f}%)."
+        f"{hit_text} "
+        # f"These results are a useful first MVP indicator of the scale of change required; as local counts and observed "
+        # f"travel patterns are added, the exact thresholds can be refined with real-world calibration."
+    )
