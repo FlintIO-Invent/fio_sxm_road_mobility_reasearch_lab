@@ -1,7 +1,7 @@
 from __future__ import annotations
-
 import math
-
+from collections import Counter
+import pandas as pd
 import networkx as nx
 
 
@@ -92,3 +92,49 @@ def add_freeflow_time_and_capacity(
 
     return G
 
+
+def _clean_name(x) -> str | None:
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return None
+    s = str(x).strip()
+    if not s or s.lower() in {"nan", "none"}:
+        return None
+    return s
+
+
+def infer_node_road_label(edges: pd.DataFrame, node_id: int) -> str:
+    """Pick the most common named road touching this node (fallback to highway class)."""
+    # edges should contain: u, v, name, highway
+    m = (edges["u"] == node_id) | (edges["v"] == node_id)
+    local = edges.loc[m]
+
+    # Prefer actual road names
+    names = [_clean_name(x) for x in local.get("name", pd.Series(dtype=object)).tolist()]
+    names = [n for n in names if n]
+    if names:
+        return Counter(names).most_common(1)[0][0]
+
+    # Fallback: use highway class
+    hw = [_clean_name(x) for x in local.get("highway", pd.Series(dtype=object)).tolist()]
+    hw = [h for h in hw if h]
+    if hw:
+        return Counter(hw).most_common(1)[0][0]
+
+    return f"Junction {node_id}"
+
+
+def make_connector_name(
+    edges: pd.DataFrame,
+    a: int,
+    b: int,
+    bottleneck_road_name: str | None = None,
+) -> str:
+    a_label = infer_node_road_label(edges, a)
+    b_label = infer_node_road_label(edges, b)
+
+    if bottleneck_road_name:
+        bn = _clean_name(bottleneck_road_name)
+        if bn:
+            return f"{a_label} ↔ {b_label} Connector (Bypass near {bn})"
+
+    return f"{a_label} ↔ {b_label} Connector"
