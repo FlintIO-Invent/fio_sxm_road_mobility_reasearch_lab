@@ -138,3 +138,14 @@ def make_connector_name(
             return f"{a_label} ↔ {b_label} Connector (Bypass near {bn})"
 
     return f"{a_label} ↔ {b_label} Connector"
+
+
+def clean_osm_text(x) -> str | None:
+    if x is None:
+        return None
+    if isinstance(x, list) and x:
+        x = x[0]
+    s = str(x).strip()
+    if s.lower() in {"nan", "none", ""}:
+        return None
+    return s
