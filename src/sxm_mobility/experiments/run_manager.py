@@ -109,3 +109,10 @@ def scenario_details_path(run_path: Path) -> Path:
 
 def solution_experiment_path(run_path: Path) -> Path:
     return run_path / "results_solution_experiment_path.parquet"
+
+
+def bottleneck_bypass_experiment_path(run_path: Path) -> Path:
+    return run_path / "bottleneck_bypass_experiment_path.parquet"
+
+def bottleneck_bypass_edge_experiment_path(run_path: Path) -> Path:
+    return run_path / "bottleneck_bypass_edge_experiment_path.parquet"

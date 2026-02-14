@@ -33,11 +33,18 @@ demand_reduction = st.Page(
     icon=":material/arrow_range:",
 )
 
+# Solutioning Experiments 
+bottleneck_bypass = st.Page(
+    str(PAGES_DIR / "experiments" / "2_run_bottleneck_bypass.py"),
+    title="Bottleneck Bypass",
+    icon=":material/alt_route:",
+)
+
 # Navigation
 pg = st.navigation({
     "Home": [overview, design],
     "Baselines": [island_traffic_stress_test],
-    "Solution Experiments": [demand_reduction],
+    "Solution Experiments": [demand_reduction, bottleneck_bypass ],
 })
 
 pg.run()

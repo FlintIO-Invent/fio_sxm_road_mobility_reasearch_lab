@@ -113,7 +113,7 @@ else:
             f"per vehicle occurs at roughly {hit_red}% demand reduction (≈ {hit_delay:.2f} min/vehicle)."
         )
 
-    st.subheader("❕ Conclusion (based on the current experiment)")
+    st.subheader("❕ Conclusion ")
     st.success(
         f"The results show a strong and consistent improvement in congestion as peak-hour demand is reduced. "
         f"Compared with the estimated baseline average delay of about {base_avg_delay:.2f} minutes per vehicle, "
