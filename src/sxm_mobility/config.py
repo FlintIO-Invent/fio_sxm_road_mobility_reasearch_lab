@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     # Scenarios toggles
     # -----------------
     baseline_top_n_bottlenecks: int = 50
+    max_to_test : int = 100
 
 
     kpi_columns: Dict[str, str] = {

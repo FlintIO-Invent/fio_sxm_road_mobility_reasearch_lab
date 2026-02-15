@@ -67,15 +67,17 @@ uv sync --extra geo --extra io --extra viz --extra dashboard --extra api --extra
 # 4) Run Graph Baselines for various experimentrs
 uv run python scripts/build_graph.py
 uv run python scripts/run_baseline.py
-uv run python scripts/run_scenarios.py
+uv run python scripts/run_demand_reduction.py
+uv run python scripts/run_bottleneck_bypass.py
+
+# uv run python scripts/run_scenarios.py # to decom
 
 
 # run vizualizer
 uv run streamlit run scripts/streamlit_app.py
 
 # 4) Run Experiments
-uv run python src/sxm_mobility/experiments/run_baseline.py
-uv run python src/sxm_mobility/experiments/run_scenarios.py
+
 
 # 4) (Optional) Run API
 uv run uvicorn sxm_mobility.api.app:app --reload
