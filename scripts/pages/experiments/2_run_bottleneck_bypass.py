@@ -1,14 +1,16 @@
 from __future__ import annotations
+
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+
 from apps.components import make_network_figure
 from sxm_mobility.experiments.run_manager import (
     base_dir,
     list_runs,
     read_manifest,
     bottleneck_bypass_experiment_path,
-    bottleneck_bypass_edge_experiment_path
+    bottleneck_bypass_edge_experiment_path,
 )
 
 # ============================================================
@@ -30,31 +32,6 @@ def load_parquet(path: Path) -> pd.DataFrame:
     return read_parquet_cached(str(path), path.stat().st_mtime)
 
 
-def find_connector_file(run_dir: Path) -> Path | None:
-    """Robust connector artifact discovery."""
-    candidates = [
-        run_dir / "connector_edges.parquet",
-        run_dir / "connector.parquet",
-        run_dir / "bypass_connector_edges.parquet",
-        run_dir / "bottleneck_bypass_edges.parquet",
-    ]
-    for p in candidates:
-        if p.exists():
-            return p
-
-    parquet_files = sorted(run_dir.glob("*.parquet"))
-    for p in parquet_files:
-        if "connector" in p.name.lower():
-            return p
-
-    for p in parquet_files:
-        name = p.name.lower()
-        if "edge" in name and "edges.parquet" not in name and "results" not in name:
-            return p
-
-    return None
-
-
 def add_improvement_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ensure stakeholder-friendly improvement columns exist:
@@ -64,9 +41,8 @@ def add_improvement_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     out = df.copy()
 
-    # Must have baseline/scenario delay or delta_delay
     if "delta_delay_veh_hours" not in out.columns:
-        if "scenario_delay_veh_hours" in out.columns and "baseline_delay_veh_hours" in out.columns:
+        if {"scenario_delay_veh_hours", "baseline_delay_veh_hours"} <= set(out.columns):
             out["delta_delay_veh_hours"] = out["scenario_delay_veh_hours"] - out["baseline_delay_veh_hours"]
         else:
             return out
@@ -85,6 +61,66 @@ def add_improvement_columns(df: pd.DataFrame) -> pd.DataFrame:
         out["status"] = out["delta_delay_veh_hours"].apply(
             lambda x: "Improves" if x < 0 else ("Worsens" if x > 0 else "No change")
         )
+
+    return out
+
+
+def _safe_str(x) -> str:
+    if x is None:
+        return ""
+    s = str(x).strip()
+    if not s or s.lower() in {"nan", "none"}:
+        return ""
+    return s
+
+
+def ensure_connector_name(results: pd.DataFrame, connector_edges: pd.DataFrame) -> pd.DataFrame:
+    """
+    Guarantee a stakeholder-friendly 'connector_name' column exists on results.
+    Preference order:
+      1) results.connector_name (already present)
+      2) connector_edges.name joined by scenario_id
+      3) constructed: "Relief connector near <road> (a ↔ b)"
+    """
+    out = results.copy()
+
+    if "connector_name" in out.columns and out["connector_name"].notna().any():
+        out["connector_name"] = out["connector_name"].astype(str)
+        return out
+
+    # Try join from connector_edges.name
+    if (
+        "scenario_id" in out.columns
+        and not connector_edges.empty
+        and "scenario_id" in connector_edges.columns
+        and "name" in connector_edges.columns
+    ):
+        name_map = (
+            connector_edges.dropna(subset=["scenario_id"])
+            .assign(scenario_id=lambda d: d["scenario_id"].astype(str))
+            .drop_duplicates("scenario_id")[["scenario_id", "name"]]
+        )
+        out = out.assign(scenario_id=lambda d: d["scenario_id"].astype(str)).merge(
+            name_map, on="scenario_id", how="left"
+        )
+        out["connector_name"] = out["name"].map(_safe_str)
+        out = out.drop(columns=["name"], errors="ignore")
+
+    # If still missing, construct a readable name
+    if "connector_name" not in out.columns:
+        out["connector_name"] = ""
+
+    if not out["connector_name"].notna().any() or (out["connector_name"].astype(str).str.len().max() == 0):
+        # Build from whatever is present
+        def _make_name(r: pd.Series) -> str:
+            base = _safe_str(r.get("road_label")) or _safe_str(r.get("baseline_road")) or ""
+            a = r.get("connector_a", "")
+            b = r.get("connector_b", "")
+            if base:
+                return f"Relief connector near {base} ({a} ↔ {b})"
+            return f"Proposed connector ({a} ↔ {b})"
+
+        out["connector_name"] = out.apply(_make_name, axis=1)
 
     return out
 
@@ -110,22 +146,17 @@ if not NODES_PATH.exists():
 edges = load_parquet(EDGES_PATH)
 nodes = load_parquet(NODES_PATH)
 
-# Ensure join keys are numeric for merges/overlays
 for c in ["u", "v", "key"]:
     if c in edges.columns:
         edges[c] = pd.to_numeric(edges[c], errors="coerce").astype("Int64")
 
-
 # ============================================================
-# Sidebar controls (render)
+# Sidebar controls
 # ============================================================
 st.sidebar.header("Map Render options")
 st.sidebar.markdown("Higher values show more detail but may reduce performance.")
 max_edges = st.sidebar.slider("Increase roadways network", 500, 20000, 8000, step=500)
-
-# Note: this page is about connectors; we overlay connectors, not baseline bottlenecks.
 show_connectors = st.sidebar.checkbox("Overlay proposed connectors", value=True)
-
 
 # ============================================================
 # Page content
@@ -134,14 +165,13 @@ st.title("Bottleneck Bypass Dashboard")
 
 st.markdown(
     """
-This dashboard shows a “what-if” test where we propose a small new road connection (a connector or bypass) near a known congestion point and then re-run the traffic simulation to see whether overall delays improve.
-The model starts from the same baseline road network and the same baseline travel demand used in the congestion results. In other words, we are not changing “how many trips happen” — we are only changing the **road layout** by adding a proposed connector link. The simulation then assigns trips across the network using weighted travel times: roads that become busy slow down, and the model shifts some trips toward alternative routes, similar to how drivers re-route in real life.
-The results table compares the baseline performance against the connector scenario. The most important indicator is **total delay**, which represents the extra travel time added by congestion across all vehicles during the simulated busy period. A connector is considered successful if it reduces total delay (an improvement), meaning the network can move the same volume of trips with less congestion.
-The map helps visualize the connectors which are highlighted as a distinct line so stakeholders can immediately see where the intervention is located. This experiment is meant to show and support early screening: ***it does not claim the connector should be built as-is.*** Instead, it provides evidence on whether a bypass concept is worth further engineering review, field validation, and discussion with the community.
+This dashboard shows a “what-if” test where we propose small new road connections (connectors/bypasses) near congestion points and re-run the traffic simulation to measure whether island-wide delays improve.
+
+We hold travel demand constant and only change the road layout. Roads are weighted by travel time: when segments carry more flow they slow down, and the model shifts some trips to alternative routes (similar to real drivers). A connector is considered successful if it reduces **total delay** across all vehicles during the simulated busy period. The map highlights each proposed connector so stakeholders can validate whether it is physically plausible and targeted at the right corridor.
 """
 )
 
-
+# pick latest run
 bb_runs = list_runs("bottleneck_bypass")
 bb_run: Path | None = bb_runs[0] if bb_runs else None
 
@@ -150,8 +180,9 @@ if bb_run is None:
     st.stop()
 
 manifest = read_manifest(bb_run)
+st.caption(f"Run created_at: {manifest.get('created_at', 'n/a')}")
 
-# --- Load Results
+# --- load results
 results_path = bottleneck_bypass_experiment_path(bb_run)
 if not results_path.exists():
     st.warning(f"Missing results file: {results_path}")
@@ -159,36 +190,53 @@ if not results_path.exists():
 else:
     results = load_parquet(results_path)
 
+# --- load connector edges (geometry + optional name/status)
+connector_path = bottleneck_bypass_edge_experiment_path(bb_run)
+if connector_path is None or not connector_path.exists():
+    st.warning(
+        "Could not find connector edge artifact for this run. "
+        "Make sure your runner writes bottleneck_bypass_edge_experiment_path(...)."
+    )
+    connector_edges = pd.DataFrame()
+else:
+    connector_edges = load_parquet(connector_path)
+
+if not connector_edges.empty and "geometry_wkt" in connector_edges.columns:
+    connector_edges = connector_edges.dropna(subset=["geometry_wkt"])
+
+# --- enrich results
 if not results.empty:
     results = add_improvement_columns(results)
+    results["scenario_id"] = results["scenario_id"].astype(str)
 
-    # Sort best first (largest improvement = highest improve_delay)
+    # 🔥 ensure connector_name exists and is meaningful
+    results = ensure_connector_name(results, connector_edges)
+
+    # Sort best first
     results = results.sort_values("improve_delay_veh_hours", ascending=False)
 
     st.subheader("🪢 Impact summary (Does it improve congestion?)")
-
     best = results.iloc[0]
     base_delay = float(best.get("baseline_delay_veh_hours", 0.0))
     best_delay = float(best.get("scenario_delay_veh_hours", 0.0))
     improve = float(best.get("improve_delay_veh_hours", 0.0))
     pct = best.get("improve_delay_pct", None)
 
-    c4, c1, c2, c3 = st.columns(4)
-    c4.metric("Total vehicles (Demand)", f"25,000")
-    c1.metric("Baseline total delay (veh-hours)", f"{base_delay:,.2f}")
-    c2.metric("Best scenario delay (veh-hours)", f"{best_delay:,.2f}")
+    c0, c1, c2, c3 = st.columns(4)
+    c0.metric("Baseline delay (veh-hours)", f"{base_delay:,.2f}")
+    c1.metric("Best scenario delay (veh-hours)", f"{best_delay:,.2f}")
+    c2.metric("Delay reduction (veh-hours)", f"{improve:,.2f}")
     c3.metric(
-        "Delay reduction (veh-hours)",
-        f"{improve:,.2f}",
-        delta=(f"{float(pct):.1f}%" if pct is not None and pd.notna(pct) else None),
+        "Delay reduction (%)",
+        f"{float(pct):.1f}%" if pct is not None and pd.notna(pct) else "n/a",
     )
 
-    st.caption("Positive delay reduction means improvement; negative means the connector made delays worse.")
+    st.caption("Positive delay reduction means improvement; negative means the connector increased delays.")
 
-    # Show a clean table for stakeholders
+    # stakeholder table
     display_cols = []
     for c in [
-        "scenario_id",
+        "connector_name",
         "status",
         "improve_delay_veh_hours",
         "improve_delay_pct",
@@ -199,6 +247,7 @@ if not results.empty:
         "baseline_bottleneck_v",
         "connector_a",
         "connector_b",
+        "scenario_id",
     ]:
         if c in results.columns:
             display_cols.append(c)
@@ -208,54 +257,27 @@ if not results.empty:
 else:
     st.info("No results rows found in the experiment output yet.")
 
+# ============================================================
+# Choose which connector to show on map (BY NAME)
+# ============================================================
+selected_scenario_id: str | None = None
 
-# --- Connector artifact (robust)
-connector_path = None
-try:
-    connector_path = bottleneck_bypass_edge_experiment_path(bb_run)
-except Exception:
-    connector_path = find_connector_file(bb_run)
+if show_connectors and (not results.empty) and ("connector_name" in results.columns):
+    options = ["(best)"] + results["connector_name"].astype(str).tolist()
+    chosen_name = st.selectbox("Choose a connector to display on the map", options, index=0)
 
-if connector_path is None or not connector_path.exists():
-    st.warning(
-        "Could not find a connector edge artifact in this run folder. "
-        "Make sure your runner writes something like connector_edges.parquet."
-    )
-    connector_edges = pd.DataFrame()
-else:
-    connector_edges = load_parquet(connector_path)
-
-if not connector_edges.empty:
-    if "geometry_wkt" not in connector_edges.columns:
-        st.error(
-            "Connector file exists but has no geometry_wkt column. "
-            "Your runner must save connector geometry as WKT."
-        )
-        connector_edges = pd.DataFrame()
+    if chosen_name == "(best)":
+        selected_scenario_id = str(results.iloc[0]["scenario_id"])
     else:
-        connector_edges = connector_edges.dropna(subset=["geometry_wkt"])
-        st.caption(f"Connector overlay source: {connector_path.name} | rows: {len(connector_edges)}")
-
-
-# --- Choose which connector to show on map (recommended for clarity)
-selected_id = None
-if not connector_edges.empty and "scenario_id" in connector_edges.columns and show_connectors:
-    options = connector_edges["scenario_id"].astype(str).unique().tolist()
-    options = ["(best)"] + options
-
-    selected = st.selectbox("Choose a connector to display on the map", options, index=0)
-
-    if selected == "(best)" and (results is not None) and (not results.empty) and ("scenario_id" in results.columns):
-        selected_id = str(results.iloc[0]["scenario_id"])
-    else:
-        selected_id = selected
+        match = results.loc[results["connector_name"].astype(str) == str(chosen_name)]
+        if not match.empty:
+            selected_scenario_id = str(match.iloc[0]["scenario_id"])
 
 extra = None
 if show_connectors and not connector_edges.empty:
-    if selected_id and "scenario_id" in connector_edges.columns:
-        extra = connector_edges.loc[connector_edges["scenario_id"].astype(str) == str(selected_id)]
+    if selected_scenario_id and "scenario_id" in connector_edges.columns:
+        extra = connector_edges.loc[connector_edges["scenario_id"].astype(str) == selected_scenario_id]
     else:
-        # fallback: draw all connectors
         extra = connector_edges
 
 # --- Map render

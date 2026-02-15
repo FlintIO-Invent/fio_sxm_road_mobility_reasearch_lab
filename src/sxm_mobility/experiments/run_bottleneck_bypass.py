@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
-
 import pandas as pd
 from loguru import logger
 
@@ -25,30 +23,45 @@ from sxm_mobility.experiments.run_manager import (
 )
 
 
-def _clean_osm_text(x) -> str | None:
-    """Turn OSMnx mixed values into readable text."""
-    if x is None:
-        return None
-    if isinstance(x, list) and x:
-        x = x[0]
-    s = str(x).strip()
-    if s.lower() in {"nan", "none", ""}:
-        return None
-    return s
-
-
 def _build_node_lookup(nodes: pd.DataFrame) -> dict[str, tuple[float, float]]:
-    """Map osmid(str) -> (lon, lat)."""
-    if "osmid" not in nodes.columns:
-        raise KeyError("nodes.parquet must contain an 'osmid' column")
-    if "x" not in nodes.columns or "y" not in nodes.columns:
-        raise KeyError("nodes.parquet must contain 'x' (lon) and 'y' (lat) columns")
+    required = {"osmid", "x", "y"}
+    missing = required - set(nodes.columns)
+    if missing:
+        raise KeyError(f"nodes.parquet missing columns: {sorted(missing)}")
 
     out: dict[str, tuple[float, float]] = {}
     for r in nodes.itertuples(index=False):
-        k = str(getattr(r, "osmid"))
-        out[k] = (float(getattr(r, "x")), float(getattr(r, "y")))
+        out[str(getattr(r, "osmid"))] = (float(getattr(r, "x")), float(getattr(r, "y")))
     return out
+
+
+def _edge_label(edges_df: pd.DataFrame, u: int, v: int, key: int) -> str:
+    if edges_df.empty:
+        return f"Edge {u}->{v}"
+
+    hit = edges_df.loc[(edges_df["u"] == u) & (edges_df["v"] == v) & (edges_df["key"] == key)]
+    if hit.empty:
+        return f"Edge {u}->{v}"
+
+    r = hit.iloc[0]
+    name = r.get("name", None)
+    highway = r.get("highway", None)
+
+    def _to_str(x) -> str | None:
+        if x is None or (isinstance(x, float) and pd.isna(x)):
+            return None
+        if isinstance(x, list):
+            return ", ".join(map(str, x))
+        return str(x)
+
+    name_s = _to_str(name)
+    highway_s = _to_str(highway)
+
+    if name_s and name_s.lower() != "nan":
+        return name_s
+    if highway_s and highway_s.lower() != "nan":
+        return highway_s
+    return f"Edge {u}->{v}"
 
 
 def _connector_edges_row(
@@ -59,7 +72,8 @@ def _connector_edges_row(
     scenario_id: str,
     base_u: int,
     base_v: int,
-    bottleneck_road: str,
+    connector_name: str,
+    baseline_edge_name: str,
     length_m: float,
     speed_kph: float,
     lanes: float,
@@ -73,13 +87,6 @@ def _connector_edges_row(
     lon2, lat2 = node_lookup[str(b)]
     wkt = f"LINESTRING ({lon1} {lat1}, {lon2} {lat2})"
 
-    pct_txt = "n/a" if improve_delay_pct is None else f"{improve_delay_pct:.1f}%"
-    label = (
-        f"{status} delay ({pct_txt}) | "
-        f"Bypass near: {bottleneck_road} | "
-        f"Connector: {a} ↔ {b} (~{length_m:.0f} m)"
-    )
-
     return {
         "scenario_id": scenario_id,
         "baseline_bottleneck_u": base_u,
@@ -87,8 +94,9 @@ def _connector_edges_row(
         "u": a,
         "v": b,
         "key": 0,
-        "name": f"Bypass near {bottleneck_road}",
-        "label": label,  # ✅ use this in Streamlit hover
+        "name": connector_name,                 # <-- used on map hover
+        "connector_name": connector_name,       # <-- used in table/choices
+        "baseline_edge_name": baseline_edge_name,
         "highway": "proposed_connector",
         "geometry_wkt": wkt,
         "length": float(length_m),
@@ -121,37 +129,31 @@ def main() -> None:
         raise FileNotFoundError("No baseline runs found. Run scripts/run_baseline.py first.")
 
     run_path = create_run_dir("bottleneck_bypass")
-    logger.info("Solution experiment run folder: {}", run_path)
+    logger.info("Bottleneck bypass sweep run folder: {}", run_path)
 
     G = load_gpickle(graph_path)
     nodes = pd.read_parquet(nodes_path)
+    edges_df = pd.read_parquet(edges_path)
+
     node_lookup = _build_node_lookup(nodes)
 
-    edges = pd.read_parquet(edges_path)  # ✅ FIX: load it
     od = load_od_parquet(od_path(baseline_run))
     btn = pd.read_parquet(baseline_bottlenecks_path(baseline_run))
 
-    logger.info("Loaded baseline OD pairs: {}", len(od))
-    logger.info("Loaded baseline bottlenecks rows: {}", len(btn))
-
-    # Normalize join keys
-    for df in (edges, btn):
+    # normalize types for joins/labels
+    for df in (btn, edges_df):
         for c in ["u", "v", "key"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
 
-    # ✅ Merge bottlenecks with edge names/highway from edges.parquet
-    btn_named = btn.merge(
-        edges[["u", "v", "key", "name", "highway"]],
-        on=["u", "v", "key"],
-        how="left",
-        suffixes=("", "_edge"),
-    )
+    # sort worst first
+    sort_cols = [c for c in ["delay", "v_c"] if c in btn.columns]
+    if sort_cols:
+        btn = btn.sort_values(sort_cols, ascending=False)
+    
+    btn_iter = btn
 
-    TOP_N_BOTTLENECKS = 10
-    btn_top = btn_named.sort_values(["delay", "v_c"], ascending=False).head(TOP_N_BOTTLENECKS)
-
-    # Baseline assignment ONCE
+    # baseline assignment ONCE
     G0 = G.copy()
     G0 = msa_traffic_assignment(G0, od=od, iters=settings.msa_iters, alpha=settings.bpr_alpha, beta=settings.bpr_beta)
     base_tstt = float(total_system_travel_time(G0))
@@ -159,59 +161,57 @@ def main() -> None:
 
     results_rows: list[dict] = []
     connector_rows: list[dict] = []
-    seen_connectors: set[tuple[int, int]] = set()
 
-    for i, r in enumerate(btn_top.itertuples(index=False), start=1):
-        if pd.isna(r.u) or pd.isna(r.v):
-            logger.warning("Skipping bottleneck with missing u/v: {}", r)
+    tested = 0
+    proposed = 0
+
+    for i, r in enumerate(btn_iter.itertuples(index=False), start=1):
+        u_val = getattr(r, "u", None)
+        v_val = getattr(r, "v", None)
+        k_val = getattr(r, "key", 0)
+
+        if pd.isna(u_val) or pd.isna(v_val):
             continue
 
-        u = int(r.u)
-        v = int(r.v)
+        u = int(u_val)
+        v = int(v_val)
+        key = int(k_val) if pd.notna(k_val) else 0
 
-        # Build readable bottleneck road label
-        road_name = _clean_osm_text(getattr(r, "name", None))
-        highway = _clean_osm_text(getattr(r, "highway", None))
-        bottleneck_road = road_name or highway or "Unnamed corridor"
+        tested += 1
+        baseline_edge_name = _edge_label(edges_df, u=u, v=v, key=key)
 
+        # propose connector near this bottleneck
         try:
             spec = propose_connector_near_edge(
                 G,
                 nodes_df=nodes,
                 u=u,
                 v=v,
-                k_hops=3,
-                max_straight_m=300.0,
+                k_hops=6,              # broaden search a bit
+                max_straight_m=1200.0, # allow longer bypasses
             )
         except Exception as e:
-            logger.warning("Could not propose connector for bottleneck {}->{}: {}", u, v, e)
+            logger.warning("No connector proposed for bottleneck {}->{}: {}", u, v, e)
             continue
 
         a, b = int(spec.a), int(spec.b)
-
         if str(a) not in node_lookup or str(b) not in node_lookup:
-            logger.warning("Skipping connector {}->{} (missing node coordinates)", a, b)
             continue
 
-        # Skip duplicates (unordered)
-        undirected_key = (a, b) if a <= b else (b, a)
-        if undirected_key in seen_connectors:
-            logger.info("Skipping duplicate connector {}<->{} (already tested)", a, b)
-            continue
-        seen_connectors.add(undirected_key)
+        proposed += 1
 
-        speed_mps = float(spec.speed_kph) * 1000.0 / 3600.0
-        t0 = float(spec.length_m) / max(1.0, speed_mps)
-        capacity = 900.0 * float(spec.lanes)
+        speed_kph = float(spec.speed_kph)
+        lanes = float(spec.lanes)
+        length_m = float(spec.length_m)
 
-        scenario_id = f"connector_{i:02d}_u{u}_v{v}_a{a}_b{b}"
+        speed_mps = speed_kph * 1000.0 / 3600.0
+        t0 = length_m / max(1.0, speed_mps)
+        capacity = 900.0 * lanes
 
-        logger.info(
-            "Bottleneck {}: {} | Proposed connector: {}<->{} (~{:.1f}m)",
-            i, bottleneck_road, a, b, float(spec.length_m),
-        )
+        scenario_id = f"bb_{proposed:04d}_u{u}_v{v}_a{a}_b{b}"
+        connector_name = f"Bypass near {baseline_edge_name}"
 
-        # Apply + assign
+        # apply + assign
         G1 = G.copy()
         apply_connector(G1, spec)
         G1 = msa_traffic_assignment(G1, od=od, iters=settings.msa_iters, alpha=settings.bpr_alpha, beta=settings.bpr_beta)
@@ -219,30 +219,30 @@ def main() -> None:
         scen_tstt = float(total_system_travel_time(G1))
         scen_delay = float(total_delay(G1))
 
-        improve_delay_veh_hours = base_delay - scen_delay  # positive = good
-        improve_delay_pct = (improve_delay_veh_hours / base_delay * 100.0) if base_delay > 0 else None
-        status = "Improves" if improve_delay_veh_hours > 0 else "Worsens"
+        improve_delay = base_delay - scen_delay
+        improve_pct = (improve_delay / base_delay * 100.0) if base_delay > 0 else None
+        status = "Improves" if improve_delay > 0 else ("Worsens" if improve_delay < 0 else "No change")
 
         results_rows.append({
             "scenario_id": scenario_id,
-            "scenario": "connector_bypass",
             "status": status,
-            "bottleneck_road": bottleneck_road,
+            "baseline_edge_name": baseline_edge_name,
             "baseline_bottleneck_u": u,
             "baseline_bottleneck_v": v,
             "connector_a": a,
             "connector_b": b,
-            "connector_length_m": float(spec.length_m),
-            "connector_speed_kph": float(spec.speed_kph),
-            "connector_lanes": float(spec.lanes),
+            "connector_name": connector_name,
+            "connector_length_m": length_m,
+            "connector_speed_kph": speed_kph,
+            "connector_lanes": lanes,
             "baseline_tstt_veh_hours": base_tstt,
             "baseline_delay_veh_hours": base_delay,
             "scenario_tstt_veh_hours": scen_tstt,
             "scenario_delay_veh_hours": scen_delay,
             "delta_tstt_veh_hours": scen_tstt - base_tstt,
             "delta_delay_veh_hours": scen_delay - base_delay,
-            "improve_delay_veh_hours": improve_delay_veh_hours,
-            "improve_delay_pct": improve_delay_pct,
+            "improve_delay_veh_hours": improve_delay,
+            "improve_delay_pct": improve_pct,
         })
 
         connector_rows.append(
@@ -252,15 +252,16 @@ def main() -> None:
                 scenario_id=scenario_id,
                 base_u=u,
                 base_v=v,
-                bottleneck_road=bottleneck_road,
-                length_m=float(spec.length_m),
-                speed_kph=float(spec.speed_kph),
-                lanes=float(spec.lanes),
+                connector_name=connector_name,
+                baseline_edge_name=baseline_edge_name,
+                length_m=length_m,
+                speed_kph=speed_kph,
+                lanes=lanes,
                 capacity=float(capacity),
                 t0=float(t0),
                 status=status,
-                improve_delay_veh_hours=improve_delay_veh_hours,
-                improve_delay_pct=improve_delay_pct,
+                improve_delay_veh_hours=float(improve_delay),
+                improve_delay_pct=improve_pct,
             )
         )
 
@@ -282,10 +283,12 @@ def main() -> None:
         msa_iters=settings.msa_iters,
         bpr_alpha=settings.bpr_alpha,
         bpr_beta=settings.bpr_beta,
-        notes=f"Connector sweep over top {TOP_N_BOTTLENECKS} baseline bottlenecks; baseline run: {baseline_run.name}",
+        notes=f"One connector per bottleneck row. Tested={tested}, Proposed={proposed}.",
     )
     write_manifest(run_path, manifest)
 
+    logger.info("Done. Tested bottlenecks: {}", tested)
+    logger.info("Proposed connectors: {}", proposed)
     logger.info("Saved results rows: {}", len(results))
     logger.info("Saved connector edges rows: {}", len(connector_edges))
 

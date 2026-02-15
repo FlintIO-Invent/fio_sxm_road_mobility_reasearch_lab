@@ -1,0 +1,14 @@
+{
+  "run_name": "bottleneck_bypass__20260215_0256",
+  "experiment": "bottleneck_bypass",
+  "created_at": "2026-02-15T02:57:03",
+  "place_query": "Sint Maarten",
+  "network_type": "drive",
+  "od_mode": "from_baseline_run",
+  "total_demand_vph": 25000.0,
+  "n_pairs": 250,
+  "msa_iters": 30,
+  "bpr_alpha": 0.15,
+  "bpr_beta": 4.0,
+  "notes": "One connector per bottleneck row. Tested=50, Proposed=0."
+}
