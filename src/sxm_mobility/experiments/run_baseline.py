@@ -91,8 +91,8 @@ def main() -> None:
         # (also written under legacy keys `tstt` and `delay` for dashboard compatibility)
         "tstt": tstt,
         "delay": delay,
-        "tstt_vh_per_h": tstt,
-        "delay_vh_per_h": delay,
+        # "tstt_vh_per_h": tstt,
+        # "delay_vh_per_h": delay,
         # Per-vehicle averages (minutes per trip)
         "avg_travel_time_min": avg_travel_time_min,
         "avg_delay_min": avg_delay_min,

@@ -5,6 +5,7 @@ from typing import Tuple
 import pandas as pd
 import plotly.graph_objects as go
 from shapely import wkt
+import streamlit as st
 
 
 def linestring_to_lonlat_lists(wkt_str: str) -> tuple[list[float], list[float]]:
@@ -180,3 +181,17 @@ def make_network_figure(
         showlegend=True,
     )
     return fig
+
+
+def show_column_help(df: pd.DataFrame, help_map: dict[str, str], *, title: str = "ℹ️ Column definitions") -> None:
+    """
+    Streamlit Option A:
+    Expander right above the table, listing definitions for ALL columns in df.
+    """
+    if df is None or df.empty:
+        return
+
+    with st.expander(title, expanded=False):
+        for col in df.columns:
+            desc = help_map.get(col, "Definition not added yet for this column.")
+            st.markdown(f"**{col}** : {desc}")

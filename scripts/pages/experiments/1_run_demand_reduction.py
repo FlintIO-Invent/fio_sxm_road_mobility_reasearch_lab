@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 from sxm_mobility.config import settings
 from sxm_mobility.helpers import clean_osm_value, build_node_labels
-from apps.components import make_network_figure
+from apps.components import make_network_figure, show_column_help
 from sxm_mobility.experiments.run_manager import (
     base_dir,
     runs_dir,
@@ -58,32 +58,45 @@ dr_path: Path | None = solution_experiment_path(latest_dr_run) if latest_dr_run 
 # ============================================================
 st.title("Island Demand Reduction Dashboard")
 
-st.markdown(
+with st.container(border=True):
+    st.subheader("📘 Reduction Findings")
+    st.markdown(
+        """
+    This dashboard summarizes a demand-reduction experiment designed to answer a practical policy question:
+    **how many vehicles can be on Sint Maarten’s roads during a busy hour before delays rise sharply, and what reduction would bring congestion back down to a more acceptable level**.
+
+    The road network remains the same as the baseline model. The only change is the number of trips entering the network during the peak hour.
+    Each row in the results table represents a different reduction level (for example 5%, 10%, 15%), which can reflect measures such as: 
+
+    - **Improved public transport**
+    - Carpooling 
+    - Staggered work and school times 
+    - Vehicle reform laws
+        - Importation Laws
+        - Car Emission Reduction Laws
+
+    or other reforms that shift travel away from peak hours. For each reduction level, the model re-runs the traffic simulation and recalculates congestion across the entire island. The table reports system performance
+    and, importantly, the **average delay per vehicle**, which is the most intuitive way to interpret what these changes mean for everyday travel.
+    The goal is to identify the smallest reduction that delivers a meaningful improvement in mobility outcomes.
     """
-This dashboard summarizes a demand-reduction experiment designed to answer a practical policy question:
-**how many vehicles can be on Sint Maarten’s roads during a busy hour before delays rise sharply, and what reduction would bring congestion back down to a more acceptable level**.
+    )
 
-The road network remains the same as the baseline model. The only change is the number of trips entering the network during the peak hour.
-Each row in the results table represents a different reduction level (for example 5%, 10%, 15%), which can reflect measures such as improved public transport,
-carpooling, staggered work and school times, parking policies, or other reforms that shift travel away from peak hours.
+    if dr_path is None:
+        st.info("No demand-reduction runs found yet. Run the demand reduction script to generate results.")
+    elif not dr_path.exists():
+        st.warning(f"Demand-reduction results file not found: {dr_path}")
+    else:
+        dr = pd.read_parquet(dr_path)
+        if not dr.empty:
+            dr_view = dr.rename(columns=getattr(settings, "dr_columns_mapping", {}))
+            dr_help = getattr(settings, "DR_HELP", {})
 
-For each reduction level, the model re-runs the traffic simulation and recalculates congestion across the entire island. The table reports system performance
-and, importantly, the **average delay per vehicle**, which is the most intuitive way to interpret what these changes mean for everyday travel.
-The goal is to identify the smallest reduction that delivers a meaningful improvement in mobility outcomes.
-"""
-)
+            st.subheader("⤵️ Demand reduction sweep ")
+            st.dataframe(dr_view, use_container_width=True)
+            show_column_help(dr_view, dr_help, title="ℹ️ What do these columns mean?")
 
-if dr_path is None:
-    st.info("No demand-reduction runs found yet. Run the demand reduction script to generate results.")
-elif not dr_path.exists():
-    st.warning(f"Demand-reduction results file not found: {dr_path}")
-else:
-    dr = pd.read_parquet(dr_path)
-    st.subheader("⤵️ Demand reduction sweep (Ideal vehicles on the road)")
-    st.dataframe(dr, use_container_width=True)
-
-
-# ---------------------------
+with st.container(border=True):
+    # ---------------------------
     # Conclusion (data-driven)
     # ---------------------------
     # Reconstruct baseline average delay if baseline row (0%) isn't included

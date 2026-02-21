@@ -6,10 +6,16 @@ st.set_page_config(
 )
 
 st.title("St. Maarten Road Mobility Research Lab")
-st.subheader("SXM Mobility Graph Lab — What This Experiment Is Doing")
+st.subheader("SXM Mobility Graph Lab: What is this experiment Is doing?")
+st.caption(
+    "This section explaines how we turn Sint Maarten’s roads into a digital network, simulate a busy hour of traffic, "
+    "and measure where congestion concentrates. Use it as a guide to understand what the tables and maps "
+    "represent before exploring the baselines tab results and the solution experiments."
+)
 
+st.divider()
 st.markdown("""
-### 1️⃣ Turning Roads Into a Digital Network
+### Turning Roads Into a Digital Network
 
 In the **SXM Mobility Graph Lab**, we ran a traffic “stress test” on Sint Maarten’s road network to identify where congestion is most likely to build and which roads are most critical to keeping the island moving.
 
@@ -24,11 +30,11 @@ Each road segment includes real-world attributes such as:
 - Estimated travel speed  
 - Approximate vehicle capacity  
 
-This allows the model to treat major corridors differently from neighborhood streets — just like real drivers do.
+This allows the model to treat major corridors differently from neighborhood streets just like real drivers do.
 
 ---
 
-### 2️⃣ Simulating a Busy Hour
+### Simulating a Busy Hour
 
 Next, we simulated a peak traffic hour by generating thousands of trips moving across the island.
 
@@ -43,11 +49,11 @@ The result is a balanced traffic distribution that reflects how congestion sprea
 
 ---
 
-### 3️⃣ Identifying Bottlenecks
+### Identifying Bottlenecks
 
 The most important output is the **bottleneck ranking**.
 
-These are not simply slow roads — they are road segments that:
+These are not simply slow roads  they are road segments that:
 
 - Carry heavy traffic
 - Experience significant congestion
@@ -58,28 +64,29 @@ Improving a high-impact corridor can reduce delays for thousands of trips.
 
 ---
 
-### 4️⃣ What the Baseline Shows
+### What the Baseline Shows
 
-In this baseline scenario:
+In this baselines (Island Traffic Stress Test):
 
 - Average travel time per trip is only a few minutes.
 - Congestion adds a modest delay per vehicle on average.
 - Total system delay appears large only because it accumulates across thousands of drivers.
 
-This means the system is sensitive — small improvements in the right place can create measurable island-wide benefits.
+This means the system is sensitive  small improvements in the right place can create measurable island-wide benefits.
 
 ---
 
-### 5️⃣ Moving Into “What-If” Testing
+### Moving Into “What-If” Testing
 
-The next phase introduces scenario testing:
+The next phase introduces solution experiments:
 
-- Increasing capacity on bottleneck roads  
-- Adjusting directional flow  
-- Adding connector roads  
-- Simulating closures or disruptions  
+- Bottleneck Bypass: adding connector roads.
+- Demand Reduction: Iteritevly educing vehicle capacity.   
+- Stop Light Placement: Adding stop light simulation to control flow. (In Development) 
 
-Each scenario is scored based on how much total congestion is reduced across the entire network.
-
-The objective is to generate a clear, evidence-based shortlist of road improvements — supported by maps, metrics, and visuals that policymakers and the public can easily understand.
+Each scenario is asssed based on how much total congestion is reduced across the entire network.
+The objective is to generate a clear, evidence-based shortlist of road improvements  supported by maps, metrics, and visuals that policymakers and the public can easily understand.
+        
 """)
+
+
