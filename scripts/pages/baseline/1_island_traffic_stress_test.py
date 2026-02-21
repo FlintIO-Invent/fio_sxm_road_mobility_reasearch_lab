@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 from sxm_mobility.config import settings
 from sxm_mobility.helpers import clean_osm_value, build_node_labels
-from apps.components import make_network_figure
+from apps.components import make_network_figure, show_column_help
 from sxm_mobility.experiments.run_manager import (
     base_dir,
     list_runs,
@@ -143,43 +143,15 @@ if not btn.empty:
 
     # Optional per-vehicle edge delay (sec/veh)
     if "flow" in merged_btn.columns and "delay" in merged_btn.columns:
-        merged_btn["Edge avg delay (sec/veh)"] = (merged_btn["delay"] * 3600.0) / merged_btn["flow"].replace(0, pd.NA)
-        merged_btn["Edge avg delay (sec/veh)"] = merged_btn["Edge avg delay (sec/veh)"].round(2)
+        merged_btn["avg delay (sec/veh)"] = (merged_btn["delay"] * 3600.0) / merged_btn["flow"].replace(0, pd.NA)
+        merged_btn["avg delay (sec/veh)"] = merged_btn["avg delay (sec/veh)"].round(2)
 
     cols = [
         c for c in
-        ["Road", "From", "To", "delay", "v_c", "flow", "capacity", "length", "Edge avg delay (sec/veh)"]
+        ["Road", "From", "To", "delay", "volume capacity ratio", "flow", "capacity", "length", "avg delay (sec/veh)"]
         if c in merged_btn.columns
     ]
 
-
-# # ============================================================
-# # Optional: select scenario run
-# # ============================================================
-# scen_runs = list_runs("scenarios")
-# if not scen_runs:
-#     scen_runs = list_runs("scenario")
-
-# selected_scen_run_path: Path | None = None
-# scen_df = pd.DataFrame()
-
-# if scen_runs:
-#     scen_options = ["(latest)"] + [p.name for p in scen_runs]
-#     selected_scen = st.sidebar.selectbox("Scenario run", scen_options, index=0)
-
-#     if selected_scen == "(latest)":
-#         selected_scen_run_path = scen_runs[0]
-#     else:
-#         selected_scen_run_path = next(p for p in scen_runs if p.name == selected_scen)
-
-#     scen_manifest = read_manifest(selected_scen_run_path)
-#     st.sidebar.caption(f"Scenarios created_at: {scen_manifest.get('created_at', 'n/a')}")
-
-#     try:
-#         scen_df = load_parquet(scenarios_path(selected_scen_run_path))
-#     except FileNotFoundError:
-#         scen_df = pd.DataFrame()
-#         st.sidebar.warning("Scenario results missing in selected run.")
 
 st.sidebar.divider()
 
@@ -206,27 +178,31 @@ st.title("Island Traffic Stress Test Dashboard")
 with st.container(border=True):
     st.subheader("📘 Baseline outputs")
     st.caption(
-        "This section shows how the road network performs under normal conditions — "
+        "This section shows how the road network performs under normal conditions "
         "before any improvements or changes are tested."
     )
 
     c1, c2 = st.columns([1, 1], gap="large")
 
-    st.markdown("**KPI summary**")
+    st.markdown("**KPI Summary**")
     if not kpi.empty:
-        kpi_view = kpi.rename(columns=getattr(settings, "kpi_columns", {}))
+        kpi_view = kpi.rename(columns=getattr(settings, "kpi_columns_mapping", {}))
+        kpi_help = getattr(settings, "KPI_HELP", {})
         st.dataframe(kpi_view, use_container_width=True)
+        show_column_help(kpi_view, kpi_help, title="ℹ️ What do these columns mean?")
+
     else:
         st.info("No KPI table found for this run.")
 
-    
-    st.markdown("**Top bottlenecks (readable)**")
+
+    st.markdown("**Top bottlenecks**")
     if not btn.empty and not merged_btn.empty:
         # Keep output consistent
         if "delay" in merged_btn.columns:
             merged_btn = merged_btn.sort_values("delay", ascending=False)
-
         st.dataframe(merged_btn[cols], use_container_width=True)
+        show_column_help(merged_btn[cols], settings.BOTTLENECK_HELP, title="ℹ️  What do these columns mean?")
+
     else:
         st.info("No bottleneck table found for this run.")
 
@@ -252,24 +228,6 @@ with st.container(border=True):
         top_n=top_n,
     )
     st.plotly_chart(fig, use_container_width=True)
-
-
-# # ---------------------------
-# # Scenarios
-# # ---------------------------
-# with st.container(border=True):
-#     st.subheader("🔄 Scenario outputs")
-#     st.caption(
-#         "Scenario results show how proposed changes would affect island-wide mobility. "
-#         "If you select a scenario run in the sidebar, it will be shown here."
-#     )
-
-#     if scen_df is not None and not scen_df.empty:
-#         scen_view = scen_df.rename(columns=getattr(settings, "scen_columns", {}))
-#         st.dataframe(scen_view, use_container_width=True)
-#     else:
-#         st.info("No scenario run selected or scenario results not found.")
-
 
 # ---------------------------
 # Solution Prioritization

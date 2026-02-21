@@ -70,9 +70,6 @@ uv run python scripts/run_baseline.py
 uv run python scripts/run_demand_reduction.py
 uv run python scripts/run_bottleneck_bypass.py
 
-# uv run python scripts/run_scenarios.py # to decom
-
-
 # run vizualizer
 uv run streamlit run scripts/streamlit_app.py
 

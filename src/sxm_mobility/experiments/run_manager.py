@@ -1,13 +1,10 @@
 from __future__ import annotations
-
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
 from sxm_mobility.config import settings
-
 
 
 def processed_dir() -> Path:
@@ -113,6 +110,7 @@ def solution_experiment_path(run_path: Path) -> Path:
 
 def bottleneck_bypass_experiment_path(run_path: Path) -> Path:
     return run_path / "bottleneck_bypass_experiment_path.parquet"
+
 
 def bottleneck_bypass_edge_experiment_path(run_path: Path) -> Path:
     return run_path / "bottleneck_bypass_edge_experiment_path.parquet"
