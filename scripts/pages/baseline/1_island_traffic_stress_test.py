@@ -79,7 +79,7 @@ if not baseline_runs:
 
 st.sidebar.header("Experiment Run History")
 st.sidebar.markdown(
-    "The history tracks minnor parameter chnages like vehicle deman, experiment names, iterations ect."
+    "The history tracks minor parameter changes like vehicle demand, experiment names, iterations etc."
 )
 
 baseline_options = [p.name for p in baseline_runs]
@@ -176,7 +176,7 @@ st.title("Island Traffic Stress Test Dashboard")
 # Baseline outputs
 # ---------------------------
 with st.container(border=True):
-    st.subheader("📘 Baseline outputs")
+    st.subheader("Baseline outputs")
     st.caption(
         "This section shows how the road network performs under normal conditions "
         "before any improvements or changes are tested."
@@ -211,7 +211,7 @@ with st.container(border=True):
 # Map
 # ---------------------------
 with st.container(border=True):
-    st.subheader("🗺️ Road Network Map")
+    st.subheader("St. Maarten Road Network Map")
     st.caption(
         "This interactive map shows the modeled road network of Sint Maarten. "
         "Optionally overlay the top bottleneck segments from the selected baseline run."
@@ -233,9 +233,9 @@ with st.container(border=True):
 # Solution Prioritization
 # ---------------------------
 with st.container(border=True):
-    st.subheader("💡 Solution Experiments & Prioritization")
+    st.subheader("Solution Experiments & Prioritization")
     st.caption(
-        "In the ***solution experiments*** tab contains all modeled intervention scenarios and their comparative results."
+        "In the ***solution experiments*** tab you can view all modeled intervention scenarios and their comparative results."
     )
     st.markdown(
         """

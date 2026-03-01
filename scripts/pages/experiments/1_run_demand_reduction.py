@@ -59,7 +59,7 @@ dr_path: Path | None = solution_experiment_path(latest_dr_run) if latest_dr_run 
 st.title("Island Demand Reduction Dashboard")
 
 with st.container(border=True):
-    st.subheader("📘 Reduction Findings")
+    st.subheader("Reduction Findings")
     st.markdown(
         """
     This dashboard summarizes a demand-reduction experiment designed to answer a practical policy question:
@@ -91,7 +91,7 @@ with st.container(border=True):
             dr_view = dr.rename(columns=getattr(settings, "dr_columns_mapping", {}))
             dr_help = getattr(settings, "DR_HELP", {})
 
-            st.subheader("⤵️ Demand reduction sweep ")
+            st.subheader("Demand reduction sweep ")
             st.dataframe(dr_view, use_container_width=True)
             show_column_help(dr_view, dr_help, title="ℹ️ What do these columns mean?")
 
@@ -126,7 +126,7 @@ with st.container(border=True):
             f"per vehicle occurs at roughly {hit_red}% demand reduction (≈ {hit_delay:.2f} min/vehicle)."
         )
 
-    st.subheader("❕ Conclusion ")
+    st.subheader("Conclusion ")
     st.success(
         f"The results show a strong and consistent improvement in congestion as peak-hour demand is reduced. "
         f"Compared with the estimated baseline average delay of about {base_avg_delay:.2f} minutes per vehicle, "
