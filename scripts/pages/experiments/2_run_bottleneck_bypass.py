@@ -162,7 +162,7 @@ show_connectors = st.sidebar.checkbox("Overlay proposed connectors", value=True)
 # ============================================================
 st.title("Bottleneck Bypass Dashboard")
 with st.container(border=True):
-    st.subheader("📘 Bypass Findings")
+    st.subheader("Bypass Findings")
     st.markdown(
         """
     This dashboard shows a “what-if” test where we propose small new road connections (connectors/bypasses) near congestion points and re-run the traffic simulation to measure whether island-wide delays improve.
@@ -214,7 +214,7 @@ with st.container(border=True):
         # Sort best first
         results = results.sort_values("improve_delay_veh_hours", ascending=False)
 
-        st.subheader("🪢 Impact summary (Does it improve congestion?)")
+        st.subheader("Impact summary (Does it improve congestion?)")
         best = results.iloc[0]
         base_delay = float(best.get("baseline_delay_veh_hours", 0.0))
         best_delay = float(best.get("scenario_delay_veh_hours", 0.0))
@@ -235,12 +235,11 @@ with st.container(border=True):
         if  results_path is None or not results_path.exists():
             st.info("No results file found yet. Run the bottleneck bypass script to generate results.")
         else:
-            bn = pd.read_parquet(results_path)
+            bn = load_parquet(results_path)
             if  not bn.empty:
                 bn_view = bn.rename(columns=getattr(settings, "BYPASS_COLUMNS_MAPPING", {}))
                 bn_help = getattr(settings, "BYPASS_RESULTS_HELP", {})
 
-                # st.subheader("⤵️ Demand reduction sweep ")
                 st.dataframe(bn_view, use_container_width=True)
                 show_column_help(bn_view, bn_help, title="ℹ️ What do these columns mean?")
 
@@ -253,8 +252,8 @@ with st.container(border=True):
 with st.container(border=True):
     
     # --- Map render
-    st.subheader("🗺️ Map view")
-    st.caption("The highlighted line is the selected proposed connector/bypass.")
+    st.subheader("St. Maarten Road Network Map")
+    st.caption("The highlighted line is the selected proposed connector/bypass. **Some connectors may not appear properlyif they lack geometry or if the map is too zoomed out**. Use the sidebar to toggle connector visibility and adjust how many roads are shown.")
     
     # ============================================================
     # Choose which connector to show on map (BY NAME)
@@ -262,7 +261,7 @@ with st.container(border=True):
     selected_scenario_id: str | None = None
 
     if show_connectors and (not results.empty) and ("connector_name" in results.columns):
-        options = ["(best)"] + results["connector_name"].astype(str).tolist()
+        options = ["(best)"] + results["connector_name"].astype(str).drop_duplicates().tolist()
         chosen_name = st.selectbox("Choose a connector to display on the map", options, index=0)
 
         if chosen_name == "(best)":

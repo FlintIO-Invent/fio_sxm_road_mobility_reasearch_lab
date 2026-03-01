@@ -109,7 +109,7 @@ def make_network_figure(
                 lon=lons_all,
                 lat=lats_all,
                 mode="lines",
-                line=dict(width=3, color="red"),
+                line=dict(width=5, color="red"),
                 name="Top bottlenecks",
                 hoverinfo="skip",  # we used concatenated trace; hover per-segment is tricky
             )
