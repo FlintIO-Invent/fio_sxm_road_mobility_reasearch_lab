@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 import pandas as pd
+import numpy as np
 from sxm_mobility.config import settings
 import streamlit as st
 from apps.components import make_network_figure, show_column_help
@@ -123,7 +124,6 @@ def ensure_connector_name(results: pd.DataFrame, connector_edges: pd.DataFrame) 
 
     return out
 
-
 # ============================================================
 # Resolve base network artifacts (shared)
 # ============================================================
@@ -245,12 +245,8 @@ with st.container(border=True):
 
     else:
         st.info("No results rows found in the experiment output yet.")
-
-    
-
             
 with st.container(border=True):
-    
     # --- Map render
     st.subheader("St. Maarten Road Network Map")
     st.caption("The highlighted line is the selected proposed connector/bypass. **Some connectors may not appear properlyif they lack geometry or if the map is too zoomed out**. Use the sidebar to toggle connector visibility and adjust how many roads are shown.")
@@ -270,13 +266,13 @@ with st.container(border=True):
             match = results.loc[results["connector_name"].astype(str) == str(chosen_name)]
             if not match.empty:
                 selected_scenario_id = str(match.iloc[0]["scenario_id"])
-
     extra = None
     if show_connectors and not connector_edges.empty:
         if selected_scenario_id and "scenario_id" in connector_edges.columns:
             extra = connector_edges.loc[connector_edges["scenario_id"].astype(str) == selected_scenario_id]
         else:
             extra = connector_edges
+
     fig = make_network_figure(
         edges=edges,
         max_edges=max_edges,

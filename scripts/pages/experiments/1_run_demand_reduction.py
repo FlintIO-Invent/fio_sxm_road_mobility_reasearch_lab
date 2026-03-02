@@ -126,13 +126,77 @@ with st.container(border=True):
             f"per vehicle occurs at roughly {hit_red}% demand reduction (≈ {hit_delay:.2f} min/vehicle)."
         )
 
-    st.subheader("Conclusion ")
-    st.success(
-        f"The results show a strong and consistent improvement in congestion as peak-hour demand is reduced. "
-        f"Compared with the estimated baseline average delay of about {base_avg_delay:.2f} minutes per vehicle, "
-        f"reducing demand by {best_red}% lowers average delay to approximately {best_avg_delay:.2f} minutes per vehicle "
-        f"(an improvement of about {improvement_pct:.0f}%)."
-        f"{hit_text} "
-        # f"These results are a useful first MVP indicator of the scale of change required; as local counts and observed "
-        # f"travel patterns are added, the exact thresholds can be refined with real-world calibration."
+
+    st.subheader("Conclusion")
+
+    # --- Primary takeaways (balanced framing) ---
+    st.info(
+        "Demand reduction consistently improves congestion. "
+        "The **50% reduction** case should be treated as an **optimistic** goal, "
+        "so we also highlight **more obtainable, more plausible options in the first phase of implementation**."
     )
+
+    # --- Top row KPIs: baseline + optimistic ---
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Baseline avg delay", f"{base_avg_delay:.2f} min/veh")
+    c2.metric("Optimistic scenario", f"-{best_red}% demand")
+    c3.metric("Delay (optimistic)", f"{best_avg_delay:.2f} min/veh", delta=f"-{improvement_pct:.0f}%")
+
+    st.caption(hit_text)
+
+    st.divider()
+
+    # --- Secondary options table ---
+    st.markdown("#### Secondary options (quickly achievable reductions with meaningful improvements)")
+
+    df_opts = pd.DataFrame({
+        "Demand reduction (%)": dr["reduction_pct"],
+        "Avg delay (min/veh)": dr["avg_delay_min"],
+    })
+
+    df_opts["Improvement vs baseline (%)"] = (
+        (base_avg_delay - df_opts["Avg delay (min/veh)"]) / base_avg_delay * 100
+    ).round(0).astype(int)
+
+    # mark optimistic scenario
+    df_opts["Scenario"] = df_opts["Demand reduction (%)"].apply(
+        lambda x: "Optimistic (stretch)" if x == best_red else "Secondary"
+    )
+
+    # Keep only meaningful secondary options (exclude baseline + optimistic)
+    secondary_df = df_opts[
+        (df_opts["Demand reduction (%)"] != 0) &
+        (df_opts["Demand reduction (%)"] != best_red)
+    ].sort_values("Demand reduction (%)")
+
+    # Show top 3 secondary (you can change this selection logic)
+    top_secondary = secondary_df.head(3)
+
+    st.dataframe(
+        top_secondary[["Demand reduction (%)", "Avg delay (min/veh)", "Improvement vs baseline (%)"]],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # --- Narrative summary: optimistic + secondary ---
+    if not top_secondary.empty:
+        sec_lines = []
+        for _, r in top_secondary.iterrows():
+            sec_lines.append(
+                f"- **-{int(r['Demand reduction (%)'])}%** → **{r['Avg delay (min/veh)']:.2f} min/veh** "
+                f"(≈ **{int(r['Improvement vs baseline (%)'])}%** improvement)"
+            )
+        secondary_text = "\n".join(sec_lines)
+    else:
+        secondary_text = "_No secondary options available from the current sweep._"
+
+    st.success(
+        f"**Optimistic (stretch):** -{best_red}% demand reduces average delay from "
+        f"**{base_avg_delay:.2f}** to **{best_avg_delay:.2f} min/vehicle** "
+        f"(≈ **{improvement_pct:.0f}%** improvement).\n\n"
+        f"**Secondary options:**\n{secondary_text}"
+    )
+
+
+
+
