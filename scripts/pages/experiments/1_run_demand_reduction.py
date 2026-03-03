@@ -138,9 +138,9 @@ with st.container(border=True):
 
     # --- Top row KPIs: baseline + optimistic ---
     c1, c2, c3 = st.columns(3)
-    c1.metric("Baseline avg delay", f"{base_avg_delay:.2f} min/veh")
-    c2.metric("Optimistic scenario", f"-{best_red}% demand")
-    c3.metric("Delay (optimistic)", f"{best_avg_delay:.2f} min/veh", delta=f"-{improvement_pct:.0f}%")
+    c1.metric("Current Average Delay", f"{base_avg_delay:.2f} min/veh")
+    c2.metric("Optimistic Reduction Scenario", f"-{best_red}% demand")
+    c3.metric("Possible Average Delay Improvement", f"{best_avg_delay:.2f} min/veh", delta=f"-{improvement_pct:.0f}%")
 
     st.caption(hit_text)
 
