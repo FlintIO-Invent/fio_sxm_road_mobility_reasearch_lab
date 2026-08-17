@@ -1,252 +1,184 @@
 from __future__ import annotations
+
 from pathlib import Path
+
 import pandas as pd
 import streamlit as st
-from sxm_mobility.config import settings
-from sxm_mobility.helpers import clean_osm_value, build_node_labels
-from apps.components import make_network_figure, show_column_help
-from sxm_mobility.experiments.run_manager import (
-    base_dir,
-    list_runs,
-    read_manifest,
-    baseline_bottlenecks_path,
-    baseline_kpi_path,
-    scenarios_path,
+from apps.components import make_network_figure
+from apps.executive import (
+    apply_executive_style,
+    decision_callout,
+    executive_header,
+    format_analysis_date,
+    screening_notice,
 )
 
-# ============================================================
-# Page config
-# ============================================================
-st.set_page_config(page_title="St. Maarten Road Mobility Research Lab", layout="wide")
+from sxm_mobility.experiments.run_manager import (
+    base_dir,
+    baseline_bottlenecks_path,
+    baseline_kpi_path,
+    list_runs,
+    read_manifest,
+)
+from sxm_mobility.helpers import clean_osm_value
 
-# ============================================================
-# Cached parquet reader
-# ============================================================
+st.set_page_config(page_title="Network Performance | SXM Mobility", page_icon="◈", layout="wide")
+apply_executive_style()
+
+
 @st.cache_data
 def read_parquet_cached(path_str: str, mtime: float) -> pd.DataFrame:
-    # mtime is included so cache invalidates when the file changes
     return pd.read_parquet(path_str)
 
 
 def load_parquet(path: Path) -> pd.DataFrame:
     if not path.exists():
-        raise FileNotFoundError(str(path))
+        return pd.DataFrame()
     return read_parquet_cached(str(path), path.stat().st_mtime)
 
 
-def ids_to_string_for_display(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
-    out = df.copy()
-    for c in cols:
-        if c in out.columns:
-            out[c] = out[c].astype("string")
-    return out
+def pressure_label(value: float) -> str:
+    if value >= 2:
+        return "Very high"
+    if value >= 1.2:
+        return "High"
+    if value >= 1:
+        return "Elevated"
+    return "Moderate"
 
 
-# ============================================================
-# Resolve base network artifacts (shared)
-# ============================================================
-BASE_DIR: Path = base_dir() if callable(base_dir) else base_dir
-
-EDGES_PATH = BASE_DIR / "edges.parquet"
-NODES_PATH = BASE_DIR / "nodes.parquet"
-
-if not EDGES_PATH.exists():
-    st.error(f"Missing base edges file: {EDGES_PATH}")
-    st.info("Run scripts/build_graph.py to create base artifacts.")
-    st.stop()
-
-if not NODES_PATH.exists():
-    st.error(f"Missing base nodes file: {NODES_PATH}")
-    st.info("Run scripts/build_graph.py to create base artifacts.")
-    st.stop()
-
-edges = load_parquet(EDGES_PATH)
-nodes = load_parquet(NODES_PATH)
-
-# Ensure join keys are numeric for merges/overlays
-for c in ["u", "v", "key"]:
-    if c in edges.columns:
-        edges[c] = pd.to_numeric(edges[c], errors="coerce").astype("Int64")
-
-
-# ============================================================
-# Select baseline run (required)
-# ============================================================
 baseline_runs = list_runs("baseline")
 if not baseline_runs:
-    st.info("No baseline runs found. Run scripts/run_baseline.py")
+    executive_header(
+        eyebrow="Current performance",
+        title="The network performance update is not yet available",
+        deck="Complete the latest assessment to populate the corridor and journey findings.",
+    )
     st.stop()
 
-st.sidebar.header("Experiment Run History")
-st.sidebar.markdown(
-    "The history tracks minor parameter changes like vehicle demand, experiment names, iterations etc."
+baseline_run = baseline_runs[0]
+manifest = read_manifest(baseline_run)
+kpi = load_parquet(baseline_kpi_path(baseline_run))
+bottlenecks = load_parquet(baseline_bottlenecks_path(baseline_run))
+edges = load_parquet(base_dir() / "edges.parquet")
+
+if kpi.empty or bottlenecks.empty or edges.empty:
+    st.error("The latest network performance update is incomplete.")
+    st.stop()
+
+for column in ["u", "v", "key"]:
+    bottlenecks[column] = pd.to_numeric(bottlenecks[column], errors="coerce").astype("Int64")
+    edges[column] = pd.to_numeric(edges[column], errors="coerce").astype("Int64")
+
+snapshot = kpi.iloc[0]
+island_delay = float(snapshot.get("delay", 0))
+avg_trip = float(snapshot.get("avg_travel_time_min", 0))
+avg_delay = float(snapshot.get("avg_delay_min", 0))
+modeled_demand = float(snapshot.get("total_demand_vph", 0))
+
+segments = bottlenecks.merge(edges, on=["u", "v", "key"], how="left", suffixes=("", "_road"))
+segments["Corridor"] = segments.get("name", pd.Series(index=segments.index, dtype=object)).map(
+    clean_osm_value
+)
+segments["Corridor"] = segments["Corridor"].fillna(
+    segments.get("highway", pd.Series(index=segments.index, dtype=object)).map(clean_osm_value)
+)
+segments["Corridor"] = segments["Corridor"].fillna("Unnamed corridor")
+
+corridors = (
+    segments.groupby("Corridor", as_index=False)
+    .agg(
+        modeled_delay=("delay", "sum"),
+        peak_pressure=("v_c", "max"),
+        priority_segments=("delay", "size"),
+    )
+    .sort_values("modeled_delay", ascending=False)
+)
+denominator = island_delay if island_delay > 0 else float(corridors["modeled_delay"].sum())
+corridors["share"] = corridors["modeled_delay"] / denominator * 100
+corridors["pressure"] = corridors["peak_pressure"].map(pressure_label)
+
+top_corridor = str(corridors.iloc[0]["Corridor"])
+top_corridor_share = float(corridors.iloc[0]["share"])
+top_three_share = float(corridors.head(3)["share"].sum())
+
+executive_header(
+    eyebrow=f"Current performance · {format_analysis_date(manifest.get('created_at'))}",
+    title="A small number of corridors account for most of the estimated network delay",
+    deck=(
+        f"Priority segments along {top_corridor} account for an estimated {top_corridor_share:.0f}% of the island-wide congestion delay. "
+        f"Together, the three leading corridors represent approximately {top_three_share:.0f}%, highlighting where targeted investigation could have the greatest value."
+    ),
+)
+screening_notice()
+
+metric_columns = st.columns(4)
+metric_columns[0].metric("Chosen trip estimate", f"{modeled_demand:,.0f}")
+metric_columns[1].metric("Chosen journey estimate", f"{avg_trip:.1f} min")
+metric_columns[2].metric("Chosen delay estimate", f"{avg_delay:.1f} min")
+metric_columns[3].metric("Top-3 estimate", f"{top_three_share:.0f}%")
+
+decision_callout(
+    title="Focus the next round of fieldwork on the highest-priority corridors.",
+    body=(
+        "Targeted peak-hour counts, turning-movement surveys, queue observations, and measured travel times can validate "
+        "the current findings and provide the evidence needed to develop practical interventions."
+    ),
 )
 
-baseline_options = [p.name for p in baseline_runs]
-selected_baseline = st.sidebar.selectbox("Baseline run", baseline_options, index=0)
-baseline_run_path = next(p for p in baseline_runs if p.name == selected_baseline)
-
-baseline_manifest = read_manifest(baseline_run_path)
-st.sidebar.caption(f"Baseline created_at: {baseline_manifest.get('created_at', 'n/a')}")
-
-kpi_path = baseline_kpi_path(baseline_run_path)
-btn_path = baseline_bottlenecks_path(baseline_run_path)
-
-# Load KPI + bottlenecks
-try:
-    kpi = load_parquet(kpi_path)
-except FileNotFoundError:
-    kpi = pd.DataFrame()
-    st.warning(f"Baseline KPI missing for run: {baseline_run_path.name}")
-
-try:
-    btn = load_parquet(btn_path)
-except FileNotFoundError:
-    btn = pd.DataFrame()
-    st.warning(f"Baseline bottlenecks missing for run: {baseline_run_path.name}")
-
-# Standardize bottleneck join key types
-for c in ["u", "v", "key"]:
-    if c in btn.columns:
-        btn[c] = pd.to_numeric(btn[c], errors="coerce").astype("Int64")
-
-# Build readable junction labels (uses nodes + edges)
-node_labels = build_node_labels(nodes, edges)
-
-def node_label(x) -> str:
-    if pd.isna(x):
-        return "Junction"
-    try:
-        return node_labels.get(int(x), "Junction")
-    except Exception:
-        return "Junction"
-
-# Enrich bottlenecks with road names and From/To labels
-merged_btn = pd.DataFrame()
-cols: list[str] = []
-
-if not btn.empty:
-    merged_btn = btn.merge(
-        edges,
-        on=["u", "v", "key"],
-        how="left",
-        suffixes=("", "_edge"),
-    )
-
-    merged_btn["Road"] = merged_btn.get("name", pd.Series([None] * len(merged_btn))).map(clean_osm_value)
-    merged_btn["Road"] = merged_btn["Road"].fillna(
-        merged_btn.get("highway", pd.Series([None] * len(merged_btn))).map(clean_osm_value)
-    )
-
-    merged_btn["From"] = merged_btn["u"].map(node_label)
-    merged_btn["To"] = merged_btn["v"].map(node_label)
-
-    # Optional per-vehicle edge delay (sec/veh)
-    if "flow" in merged_btn.columns and "delay" in merged_btn.columns:
-        merged_btn["avg delay (sec/veh)"] = (merged_btn["delay"] * 3600.0) / merged_btn["flow"].replace(0, pd.NA)
-        merged_btn["avg delay (sec/veh)"] = merged_btn["avg delay (sec/veh)"].round(2)
-
-    cols = [
-        c for c in
-        ["Road", "From", "To", "delay", "volume capacity ratio", "flow", "capacity", "length", "avg delay (sec/veh)"]
-        if c in merged_btn.columns
-    ]
-
-
-st.sidebar.divider()
-
-# ============================================================
-# Sidebar controls (render)
-# ============================================================
-st.sidebar.header("Map Render options")
-st.sidebar.markdown(
-    "Adjust how much of the road network is drawn. Higher values show more detail but may reduce performance."
+st.subheader("Where network pressure is concentrated")
+priority_view = corridors.head(5).copy()
+priority_view["Share of island delay"] = priority_view["share"].map(lambda value: f"{value:.1f}%")
+priority_view["Relative pressure"] = priority_view["pressure"]
+st.dataframe(
+    priority_view[["Corridor", "Share of island delay", "Relative pressure"]],
+    width="stretch",
+    hide_index=True,
 )
-max_edges = st.sidebar.slider("Increase roadways network", 500, 20000, 8000, step=500)
-show_bottlenecks = st.sidebar.checkbox("Overlay bottlenecks", value=True)
-top_n = st.sidebar.slider("Increase bottlenecks", 10, 300, 50, step=10)
 
+st.subheader("Network view")
+st.caption("Highlighted road segments make the largest estimated contribution to peak-hour delay.")
+figure = make_network_figure(
+    edges=edges,
+    max_edges=len(edges),
+    bottlenecks=bottlenecks.sort_values("delay", ascending=False).head(15),
+    top_n=15,
+    height=560,
+)
+st.plotly_chart(figure, width="stretch")
 
-# ============================================================
-# Page content
-# ============================================================
-st.title("Island Traffic Stress Test Dashboard")
-
-# ---------------------------
-# Baseline outputs
-# ---------------------------
-with st.container(border=True):
-    st.subheader("Baseline outputs")
-    st.caption(
-        "This section shows how the road network performs under normal conditions "
-        "before any improvements or changes are tested."
-    )
-
-    c1, c2 = st.columns([1, 1], gap="large")
-
-    st.markdown("**KPI Summary**")
-    if not kpi.empty:
-        kpi_view = kpi.rename(columns=getattr(settings, "kpi_columns_mapping", {}))
-        kpi_help = getattr(settings, "KPI_HELP", {})
-        st.dataframe(kpi_view, use_container_width=True)
-        show_column_help(kpi_view, kpi_help, title="ℹ️ What do these columns mean?")
-
-    else:
-        st.info("No KPI table found for this run.")
-
-
-    st.markdown("**Top bottlenecks**")
-    if not btn.empty and not merged_btn.empty:
-        # Keep output consistent
-        if "delay" in merged_btn.columns:
-            merged_btn = merged_btn.sort_values("delay", ascending=False)
-        st.dataframe(merged_btn[cols], use_container_width=True)
-        show_column_help(merged_btn[cols], settings.BOTTLENECK_HELP, title="ℹ️  What do these columns mean?")
-
-    else:
-        st.info("No bottleneck table found for this run.")
-
-
-# ---------------------------
-# Map
-# ---------------------------
-with st.container(border=True):
-    st.subheader("St. Maarten Road Network Map")
-    st.caption(
-        "This interactive map shows the modeled road network of Sint Maarten. "
-        "Optionally overlay the top bottleneck segments from the selected baseline run."
-    )
-
-    bottlenecks_for_overlay = None
-    if show_bottlenecks and not btn.empty:
-        bottlenecks_for_overlay = btn.head(top_n)
-
-    fig = make_network_figure(
-        edges=edges,
-        max_edges=max_edges,
-        bottlenecks=bottlenecks_for_overlay,
-        top_n=top_n,
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-# ---------------------------
-# Solution Prioritization
-# ---------------------------
-with st.container(border=True):
-    st.subheader("Solution Experiments & Prioritization")
-    st.caption(
-        "In the ***solution experiments*** tab you can view all modeled intervention scenarios and their comparative results."
-    )
+with st.expander("Supporting analysis and data notes"):
     st.markdown(
-        """
-        There we evaluate each proposed mobility intervention against the baseline model.
+        f"""
+        - **Data version:** `{baseline_run.name}`
+        - **Analysis date:** {format_analysis_date(manifest.get("created_at"))}
+        - **Study area:** {manifest.get("place_query", "Sint Maarten")}
+        - **Peak-hour trips represented:** {modeled_demand:,.0f}
 
-        Scenarios are compared based on:
-        - Total system travel time  
-        - Congestion hotspot reduction  
-        - Network resilience and robustness  
-
-        This structured comparison helps identify which strategies deliver the strongest overall improvement
-        in mobility performance, safety, and long-term system stability.
+        “Relative pressure” translates the estimated road flow compared with indicative road capacity into
+        plain language. Capacity, speed, and travel demand still require local confirmation.
         """
+    )
+
+    technical_view = segments.sort_values("delay", ascending=False).head(25).copy()
+    technical_view = technical_view.rename(
+        columns={
+            "flow": "Estimated flow (veh/h)",
+            "capacity": "Indicative capacity (veh/h)",
+            "v_c": "Flow / capacity indicator",
+            "delay": "Estimated segment delay (veh-hours)",
+        }
+    )
+    st.dataframe(
+        technical_view[
+            [
+                "Corridor",
+                "Estimated flow (veh/h)",
+                "Indicative capacity (veh/h)",
+                "Flow / capacity indicator",
+                "Estimated segment delay (veh-hours)",
+            ]
+        ],
+        width="stretch",
+        hide_index=True,
     )
