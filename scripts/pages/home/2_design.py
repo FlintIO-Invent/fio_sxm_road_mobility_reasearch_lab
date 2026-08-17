@@ -1,92 +1,129 @@
+from __future__ import annotations
+
+import pandas as pd
 import streamlit as st
-
-st.set_page_config(
-    page_title="St. Maarten Road Mobility Research Lab",
-    layout="wide"
+from apps.executive import (
+    apply_executive_style,
+    executive_header,
+    format_analysis_date,
+    option_card,
+    screening_notice,
 )
 
-st.title("St. Maarten Road Mobility Research Lab")
-st.subheader("SXM Mobility Graph Lab: What is this experiment Is doing?")
-st.caption(
-    "This section explaines how we turn Sint Maarten’s roads into a digital network, simulate a busy hour of traffic, "
-    "and measure where congestion concentrates. Use it as a guide to understand what the tables and maps "
-    "represent before exploring the baselines tab results and the solution experiments."
+from sxm_mobility.experiments.run_manager import list_runs, read_manifest
+
+st.set_page_config(page_title="Evidence & Limitations | SXM Mobility", page_icon="◈", layout="wide")
+apply_executive_style()
+
+executive_header(
+    eyebrow="Evidence framework",
+    title="A structured basis for prioritisation and strategic planning",
+    deck=(
+        "This assessment combines a digital representation of Sint Maarten’s "
+        "road network with estimated peak-hour travel demand to show where network "
+        "pressure is likely to concentrate, how performance changes under different "
+        "conditions, and which strategic options warrant further investigation."
+    ),
+)
+screening_notice(
+    "Transparency note — Travel demand, speeds, and road capacity are currently " \
+    "based on planning estimates. Local measurements and technical validation are " \
+    "required " \
+    "before detailed design, funding decisions, or firm delivery commitments."
 )
 
-st.divider()
-st.markdown("""
-### Turning Roads Into a Digital Network
+st.subheader("What this brief is designed to support")
+useful_columns = st.columns(3, gap="medium")
+with useful_columns[0]:
+    option_card(
+        label="Prioritise",
+        title="Focus fieldwork where it matters most",
+        body="Identify the corridors and junctions where traffic counts, measured travel times, queue observations, and operational reviews can provide the greatest decision value.",
+    )
+with useful_columns[1]:
+    option_card(
+        label="Compare",
+        title="Evaluate strategic directions",
+        body="Compare demand-management and network-improvement options on a consistent basis to identify which approaches warrant further development and feasibility assessment.",
+    )
+with useful_columns[2]:
+    option_card(
+        label="Structure",
+        title="Define the next decision stage",
+        body="Turn the findings into a focused programme of validation, option development, and decision points for subsequent planning and technical review.",
+        accent="violet",
+    )
 
-In the **SXM Mobility Graph Lab**, we ran a traffic “stress test” on Sint Maarten’s road network to identify where congestion is most likely to build and which roads are most critical to keeping the island moving.
+st.subheader("How the assessment is structured")
+steps = st.columns(3, gap="large")
+with steps[0]:
+    st.markdown("#### 01 · Network foundation")
+    st.write("Roads and junctions are represented as a connected digital network with estimated travel speeds, capacity, and routing characteristics.")
+with steps[1]:
+    st.markdown("#### 02 · Peak-hour performance")
+    st.write("Estimated peak-hour trips are assigned across the network to identify where congestion forms and how it affects journey times, delay, and route choice.")
+with steps[2]:
+    st.markdown("#### 03 · Strategic comparison")
+    st.write("Demand and connectivity scenarios are tested against the same baseline to show how network performance could respond under different planning conditions.")
 
-First, we converted the island’s road system into a computer-readable network:
+st.subheader("What remains to be confirmed")
+limits = pd.DataFrame(
+    [
+        {
+            "Area requiring confirmation": "Estimated travel demand",
+            "Why it matters": "Trip volumes and origins are planning assumptions, not measured behaviour.",
+            "Next evidence step": "Traffic counts, travel surveys, and observed route patterns",
+        },
+        {
+            "Area requiring confirmation": "Indicative speed and road capacity",
+            "Why it matters": "Corridor priorities may change once local conditions are incorporated.",
+            "Next evidence step": "Observed speeds, lane use, queues, and road operations",
+        },
+        {
+            "Area requiring confirmation": "Junction and turning delay",
+            "Why it matters": "Signals, priority rules, and turning conflicts are not yet fully represented.",
+            "Next evidence step": "Turning counts, signal timings, and junction observations",
+        },
+        {
+            "Area requiring confirmation": "Delivery and wider impacts",
+            "Why it matters": "A strong mobility result is not yet an investment recommendation.",
+            "Next evidence step": "Land, safety, cost, environment, equity, and constructability checks",
+        },
+    ]
+)
+st.dataframe(limits, width="stretch", hide_index=True)
 
-- Every **intersection** becomes a node  
-- Every **road segment** becomes a link  
+st.subheader("Appropriate use")
+st.info(
+    "Use this brief to set priorities, commission the next evidence, and develop comparable options. It should "
+    "not be used by itself to approve a road project, set a statutory target, forecast economic benefits, or "
+    "promise a travel-time outcome."
+)
 
-Each road segment includes real-world attributes such as:
-- Length  
-- Direction (one-way or two-way)  
-- Estimated travel speed  
-- Approximate vehicle capacity  
+with st.expander("Analysis provenance"):
+    provenance_rows: list[dict[str, object]] = []
+    for experiment, label in [
+        ("baseline", "Network performance"),
+        ("demand_reduction", "Peak-hour demand"),
+        ("bottleneck_bypass", "Network improvements"),
+    ]:
+        runs = list_runs(experiment)
+        if not runs:
+            continue
+        run = runs[0]
+        manifest = read_manifest(run)
+        provenance_rows.append(
+            {
+                "Analysis": label,
+                "Data version": run.name,
+                "Date": format_analysis_date(manifest.get("created_at")),
+                "Calculation iterations": manifest.get("msa_iters"),
+            }
+        )
 
-This allows the model to treat major corridors differently from neighborhood streets just like real drivers do.
-
----
-
-### Simulating a Busy Hour
-
-Next, we simulated a peak traffic hour by generating thousands of trips moving across the island.
-
-The model then “drives” those trips through the network:
-
-- When too many trips use the same road, congestion increases.
-- As congestion increases, travel time slows down.
-- Drivers (in the simulation) begin shifting to alternate routes.
-- This process repeats until traffic stabilizes into a realistic pattern.
-
-The result is a balanced traffic distribution that reflects how congestion spreads through the system.
-
----
-
-### Identifying Bottlenecks
-
-The most important output is the **bottleneck ranking**.
-
-These are not simply slow roads  they are road segments that:
-
-- Carry heavy traffic
-- Experience significant congestion
-- Create system-wide ripple effects when delayed
-
-Improving a lightly used side street has minimal impact.  
-Improving a high-impact corridor can reduce delays for thousands of trips.
-
----
-
-### What the Baseline Shows
-
-In this baselines (Island Traffic Stress Test):
-
-- Average travel time per trip is only a few minutes.
-- Congestion adds a modest delay per vehicle on average.
-- Total system delay appears large only because it accumulates across thousands of drivers.
-
-This means the system is sensitive  small improvements in the right place can create measurable island-wide benefits.
-
----
-
-### Moving Into “What-If” Testing
-
-The next phase introduces solution experiments:
-
-- Bottleneck Bypass: adding connector roads.
-- Demand Reduction: Iteritevly educing vehicle capacity.   
-- Stop Light Placement: Adding stop light simulation to control flow. (In Development) 
-
-Each scenario is asssed based on how much total congestion is reduced across the entire network.
-The objective is to generate a clear, evidence-based shortlist of road improvements  supported by maps, metrics, and visuals that policymakers and the public can easily understand.
-        
-""")
-
-
+    if provenance_rows:
+        st.dataframe(pd.DataFrame(provenance_rows), width="stretch", hide_index=True)
+    st.caption(
+        "The performance and strategy comparisons were prepared as separate planning analyses. The executive "
+        "summary does not present them as one fully integrated investment ranking."
+    )

@@ -28,3 +28,8 @@ def build_graph(place_query: str, network_type: str = "drive") -> nx.MultiDiGrap
         pass
 
     return G
+
+
+def base_graph(place_query: str, network_type: str = "drive") -> nx.MultiDiGraph:
+    """Compatibility wrapper for notebooks that import `base_graph`."""
+    return build_graph(place_query, network_type)

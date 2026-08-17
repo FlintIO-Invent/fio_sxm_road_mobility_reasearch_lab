@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Tuple
 import pandas as pd
 import plotly.graph_objects as go
-from shapely import wkt
 import streamlit as st
+from shapely import wkt
 
 
 def linestring_to_lonlat_lists(wkt_str: str) -> tuple[list[float], list[float]]:
@@ -28,7 +26,7 @@ def build_network_trace(edges_df: pd.DataFrame, max_edges: int | None = None) ->
         lon=lons_all,
         lat=lats_all,
         mode="lines",
-        line=dict(width=1),
+        line=dict(width=1, color="#85899f"),
         hoverinfo="skip",
         name="Road network",        
     )
@@ -62,6 +60,7 @@ def make_network_figure(
     bottlenecks: pd.DataFrame | None = None,
     top_n: int = 50,
     extra_edges: pd.DataFrame | None = None,
+    height: int = 560,
 ) -> go.Figure:
     # Base network
     edges = _normalize_join_keys(edges)
@@ -88,7 +87,7 @@ def make_network_figure(
 
         merged = merged.head(top_n)
 
-        lons_all, lats_all, hover_all = [], [], []
+        lons_all, lats_all = [], []
         for _, row in merged.iterrows():
             w = row.get("geometry_wkt")
             if not isinstance(w, str) or not w:
@@ -97,21 +96,14 @@ def make_network_figure(
             lons_all.extend(lons + [None])
             lats_all.extend(lats + [None])
 
-            name = str(row.get("name", ""))
-            delay = row.get("delay", None)
-            vc = row.get("v_c", None)
-            hover_all.append(
-                f"{name}<br>delay={delay:.3f} veh-hrs" if isinstance(delay, (int, float)) else name
-            )
-
         fig.add_trace(
             go.Scattermapbox(
                 lon=lons_all,
                 lat=lats_all,
                 mode="lines",
-                line=dict(width=5, color="red"),
-                name="Top bottlenecks",
-                hoverinfo="skip",  # we used concatenated trace; hover per-segment is tricky
+                line=dict(width=5, color="#ef4444"),
+                name="Priority corridors",
+                hoverinfo="skip",
             )
         )
 
@@ -136,25 +128,17 @@ def make_network_figure(
                 lons_all.extend(lons + [None])
                 lats_all.extend(lats + [None])
 
-                # stakeholder hover
-                scen = row.get("scenario_id", "")
-                name = row.get("name", "Proposed connector")
+                name = str(row.get("name", "Indicative connection")).replace(
+                    "Bypass near ", "Connection near "
+                )
                 length_m = row.get("length", None)
-                speed = row.get("maxspeed", None)
                 imp_pct = row.get("improve_delay_pct", None)
-                status = row.get("status", None)
 
                 bits = [f"<b>{name}</b>"]
-                if scen:
-                    bits.append(f"Scenario: {scen}")
-                if status:
-                    bits.append(f"Impact: {status}")
                 if imp_pct is not None and pd.notna(imp_pct):
-                    bits.append(f"Delay change: {float(imp_pct):.1f}%")
+                    bits.append(f"Estimated delay reduction: {float(imp_pct):.1f}%")
                 if length_m is not None and pd.notna(length_m):
-                    bits.append(f"Length: {float(length_m):.0f} m")
-                if speed is not None and pd.notna(speed):
-                    bits.append(f"Speed: {speed} kph")
+                    bits.append(f"Straight-line distance: {float(length_m):.0f} m")
 
                 hovertext.append("<br>".join(bits))
 
@@ -163,8 +147,8 @@ def make_network_figure(
                     lon=lons_all,
                     lat=lats_all,
                     mode="lines",
-                    line=dict(width=7, color="red"),
-                    name="Proposed connector",
+                    line=dict(width=7, color="#6366f1"),
+                    name="Indicative connection",
                     hoverinfo="text",
                     text=hovertext if hovertext else None,
                 )
@@ -172,12 +156,12 @@ def make_network_figure(
 
     fig.update_layout(
         mapbox=dict(
-            style="open-street-map",
+            style="carto-positron",
             center=dict(lat=center_lat, lon=center_lon),
             zoom=13.5,
         ),
         margin=dict(l=0, r=0, t=40, b=0),
-        height=750,
+        height=height,
         showlegend=True,
     )
     return fig

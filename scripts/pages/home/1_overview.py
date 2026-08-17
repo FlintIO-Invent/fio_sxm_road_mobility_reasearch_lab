@@ -1,123 +1,245 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
 import streamlit as st
-
-st.set_page_config(page_title="St. Maarten Road Mobility Research Lab", layout="wide")
-
-st.title("St. Maarten Road Mobility Research Lab")
-st.markdown("""
-Sint. Maarten Road Mobility Research Lab is a experimental practical decision-support initiative that transforms Sint Maarten’s 
-road system into a graph-powered mobility model. Using open road network data and locally available 
-inputs (traffic counts, observations, stakeholder feedback), the lab simulates traffic flows, measures congestion and network fragility, 
-and identifies the intersections and corridors that most influence island-wide travel time and safety outcomes.
-
-The lab then runs “what-if” scenarios such as new connector roads, 
-direction changes, capacity upgrades, incident/closure tests, and safety-focused redesigns to produce 
-a ranked list of short-term actions and longer-term infrastructure priorities. All outputs are delivered as 
-consultation-ready maps and visuals that the public and institutional partners can easily understand and validate.
-
-""")
-
-st.markdown("---")
-st.header("How to use this dashboard")
-st.write(
-    "There are alot of cool things being done in the background, but the dashboard may not feel as intuitive and user-friendly since its approach is for a more scientific approach." 
-    "Here’s a quick guide to what you’re seeing and how to interact with it:\n\n"
-)
-st.subheader("Data sources")
-st.write(
-    "- OpenStreetMap road network (links, nodes, geometry, free-flow time, capacity)\n"
-    "- Real world Synthetic data (e.g., traffic counts, probe/GPS speeds, surveys)\n"
-    "- Customizable parameters that control origin & destination demand generation (e.g., trip volumes, friction/decay, zoning)\n"
+from apps.executive import (
+    apply_executive_style,
+    baseline_delay_from_sweep,
+    decision_callout,
+    deduplicate_connectors,
+    executive_header,
+    format_analysis_date,
+    make_corridor_chart,
+    option_card,
+    screening_notice,
+    select_reduction_case,
 )
 
+from sxm_mobility.experiments.run_manager import (
+    base_dir,
+    baseline_bottlenecks_path,
+    baseline_kpi_path,
+    bottleneck_bypass_experiment_path,
+    list_runs,
+    read_manifest,
+    solution_experiment_path,
+)
+from sxm_mobility.helpers import clean_osm_value
 
-st.subheader("Tabs & dashboards")
+st.set_page_config(page_title="SXM Mobility Strategy Brief", page_icon="◈", layout="wide")
+apply_executive_style()
 
-c1, c2 = st.columns(2)
 
-with c1:
-    st.markdown("### 🧱 Baselines")
-    st.write(
-        "Your **reference runs**. Use these to understand the default network + demand assumptions, "
-        "and to anchor comparisons for any interventions."
+@st.cache_data
+def load_parquet(path_str: str, mtime: float) -> pd.DataFrame:
+    return pd.read_parquet(path_str)
+
+
+def read_if_present(path: Path | None) -> pd.DataFrame:
+    if path is None or not path.exists():
+        return pd.DataFrame()
+    return load_parquet(str(path), path.stat().st_mtime)
+
+
+baseline_runs = list_runs("baseline")
+if not baseline_runs:
+    executive_header(
+        eyebrow="Sint Maarten mobility strategy",
+        title="The executive summary is awaiting the latest data update",
+        deck="Complete the network performance assessment to populate the headline findings and priority corridors.",
     )
+    st.info("The network performance results are not yet available.")
+    st.stop()
 
-with c2:
-    st.markdown("### 🛠️ Solution experiments")
-    st.write(
-        "Your **intervention runs**. Use these to evaluate proposed changes and compare results "
-        "against a baseline (including delta views)."
+baseline_run = baseline_runs[0]
+baseline_manifest = read_manifest(baseline_run)
+baseline_kpi = read_if_present(baseline_kpi_path(baseline_run))
+baseline_bottlenecks = read_if_present(baseline_bottlenecks_path(baseline_run))
+
+if baseline_kpi.empty:
+    st.error("The latest network performance update is incomplete, so the headline measures cannot be shown.")
+    st.stop()
+
+kpi = baseline_kpi.iloc[0]
+modeled_demand = float(kpi.get("total_demand_vph", 0))
+avg_trip = float(kpi.get("avg_travel_time_min", 0))
+avg_delay = float(kpi.get("avg_delay_min", 0))
+island_delay = float(kpi.get("delay", 0))
+
+edges_path = base_dir() / "edges.parquet"
+edges = read_if_present(edges_path)
+corridors = pd.DataFrame()
+if not baseline_bottlenecks.empty and not edges.empty:
+    join_keys = ["u", "v", "key"]
+    for column in join_keys:
+        baseline_bottlenecks[column] = pd.to_numeric(
+            baseline_bottlenecks[column], errors="coerce"
+        ).astype("Int64")
+        edges[column] = pd.to_numeric(edges[column], errors="coerce").astype("Int64")
+
+    corridor_segments = baseline_bottlenecks.merge(edges, on=join_keys, how="left")
+    corridor_segments["Corridor"] = corridor_segments.get("name", pd.Series(dtype=object)).map(
+        clean_osm_value
     )
-
-with st.expander("Baseline dashboard: what the sidebar controls do?", expanded=False):
-    st.write(
-        "The **Baseline** dashboard shows the default network, demand assumptions, and traffic assignment results.\n\n"
-        "**Sidebar controls are typically associated with:**"
+    corridor_segments["Corridor"] = corridor_segments["Corridor"].fillna(
+        corridor_segments.get("highway", pd.Series(dtype=object)).map(clean_osm_value)
     )
+    corridor_segments["Corridor"] = corridor_segments["Corridor"].fillna("Unnamed corridor")
+    corridors = (
+        corridor_segments.groupby("Corridor", as_index=False)
+        .agg(delay=("delay", "sum"), peak_pressure=("v_c", "max"))
+        .sort_values("delay", ascending=False)
+    )
+    denominator = island_delay if island_delay > 0 else float(corridors["delay"].sum())
+    corridors["Share of island delay"] = corridors["delay"] / denominator * 100
 
-    b1, b2 = st.columns(2)
-    with b1:
-        st.markdown(
-            "- **Experiment Run History**: There can be many baselines runs for many reasons this sidebar feature shows which saved baseline run you’re viewing\n"
-            "- **Map Render options**: used with the road network map toggle visibility of various map layers (e.g., road names, labels, traffic flow)\n"
+top_three_share = float(corridors.head(3)["Share of island delay"].sum()) if not corridors.empty else 0
+top_corridor_names = corridors.head(3)["Corridor"].tolist()
+
+demand_runs = list_runs("demand_reduction")
+demand_run = demand_runs[0] if demand_runs else None
+demand_manifest = read_manifest(demand_run) if demand_run else {}
+demand_results = read_if_present(solution_experiment_path(demand_run) if demand_run else None)
+demand_improvement = None
+demand_case_delay = None
+if not demand_results.empty:
+    demand_baseline = baseline_delay_from_sweep(demand_results)
+    demand_case = select_reduction_case(demand_results, 20)
+    demand_case_delay = float(demand_case["avg_delay_min"])
+    demand_improvement = (demand_baseline - demand_case_delay) / demand_baseline * 100
+
+connector_runs = list_runs("bottleneck_bypass")
+connector_run = connector_runs[0] if connector_runs else None
+connector_manifest = read_manifest(connector_run) if connector_run else {}
+connector_results = read_if_present(
+    bottleneck_bypass_experiment_path(connector_run) if connector_run else None
+)
+unique_connectors = deduplicate_connectors(connector_results)
+best_connector = unique_connectors.iloc[0] if not unique_connectors.empty else None
+connector_improvement = (
+    float(best_connector.get("improve_delay_pct", 0)) if best_connector is not None else None
+)
+connector_area = (
+    str(
+        best_connector.get(
+            "source_labels",
+            str(best_connector.get("connector_name", "leading pressure corridor")).replace(
+                "Bypass near ", ""
+            ),
         )
-    # with b2:
-    #     st.markdown(
-    #         "- **Assignment settings**: method/iterations (e.g., MSA steps) + outputs\n"
-    #         "- **Map metric**: what the links are colored by (volume, speed, delay, V/C…)\n"
-    #         "- **Bottleneck settings**: top-N + thresholds for ranking/highlighting\n"
-    #         "- **KPI settings**: which KPIs to show + aggregation level"
-    #     )
-
-    st.caption(
-        "Tip: If results look different than expected, check **Experiment Run History**"
-        "irst those usually drive the biggest changes."
     )
-
-with st.expander("Solution experiment dashboard: what the sidebar controls do?", expanded=False):
-    st.write(
-        "The **Solution Experiment** dashboard shows an intervention (network/demand/operations change) "
-        "and helps you compare it against a baseline.\n\n"
-        "**Sidebar controls are typically associated with:** Currently in development.."
-    )
-
-    s1, s2 = st.columns(2)
-    # with s1:
-    #     st.markdown(
-    #         "- **Experiment selection**: choose the solution/intervention run\n"
-    #         "- **Comparison mode**: Solution, Baseline, or **Delta (Solution − Baseline)**\n"
-    #         "- **Geography filters**: zoom into a district/zone/corridor\n"
-    #         "- **Demand scenario** (if varied): same as baseline or adjusted demand"
-    #     )
-    # with s2:
-    #     st.markdown(
-    #         "- **Network change toggles**: enable/disable specific modifications (if supported)\n"
-    #         "- **Map metric**: show absolute metrics or **change in** metrics (delta)\n"
-    #         "- **Impact thresholds**: filter to “meaningful” changes (e.g., delay ↓ > X)\n"
-    #         "- **KPI comparison**: absolute vs % change + aggregation level"
-    #     )
-
-    # st.caption(
-    #     "Tip: Start with **Delta** to spot where things improve/worsen, then switch to **Solution** "
-    #     "to confirm the new absolute levels are acceptable."
-    # )
-
-
-
-st.markdown("---")
-st.subheader("Notes & limitations")
-
-st.warning(
-    "This is a prototype model. While the road geometry and network structure are based on OpenStreetMap, "
-    "several inputs are currently proxies until we calibrate with local measurements.\n\n"
-    "In particular:\n"
-    "- Travel demand (Origin-Destination trips and total vehicles per hour) is synthetic.\n"
-    "- Free-flow travel time (t0) is derived from road length and assumed/OSM speed limits.\n"
-    "- Road capacity is approximated (e.g., a per-lane vehicles/hour rule).\n"
-    "- Congestion response uses default BPR parameters (alpha/beta), not Sint Maarten–calibrated values.\n"
-    "- Intersection effects (signals, turning delay, priority rules) are not yet fully represented.\n\n"
-    "Although we follow industry statndard principles, the dashboard is best interpreted as a screening tool (where congestion concentrates"
-    " and which corridors matter most), not a final engineering forecast, until local counts and observed travel times are added, but provides a starting point for discussion and improvements."
+    if best_connector is not None
+    else "the leading pressure corridor"
 )
 
+executive_header(
+    eyebrow="Sint Maarten mobility strategy · Executive summary",
+    title="How Sint Maarten moves, where pressure builds, and where action can have the greatest impact",
+    deck=(
+        f"The assessment represents {modeled_demand:,.0f} vehicle trips during the peak hour. "
+        f"An average journey is estimated at {avg_trip:.1f} minutes, including {avg_delay:.1f} minutes "
+        "of congestion-related delay. Most of that pressure is concentrated along a small number of corridors."
+    ),
+)
+screening_notice(
+    "Decision-use note — These analyses are designed to guide planning decisions by identifying the areas and strategies that warrant further investigation. They are not intended to represent a final investment ranking."
+)
 
+metric_columns = st.columns(4)
+metric_columns[0].metric("Chosen trip estimate", f"{modeled_demand:,.0f}")
+metric_columns[1].metric("Chosen journey estimate", f"{avg_trip:.1f} min")
+metric_columns[2].metric("Chosen delay estimate", f"{avg_delay:.1f} min")
+metric_columns[3].metric(
+    "Top-3 estimate",
+    f"{top_three_share:.0f}%" if top_three_share else "—",
+)
 
+if top_corridor_names:
+    corridor_phrase = ", ".join(top_corridor_names)
+else:
+    corridor_phrase = "the leading pressure corridors"
+
+decision_callout(
+    title="Confirm the priority corridors and develop a balanced response.",
+    body=(
+        f"Focus data collection and junction reviews on A.J.C. Brouwersweg, G. A. Arnell Boulevard, and the Indigo Bay Roundabout. Treat the 10%–20% demand scenarios as planning bounds, and advance the strongest network concepts for further land, safety, cost, and constructability assessment."
+    ),
+)
+
+st.subheader("Strategic response at a glance")
+left, right = st.columns(2, gap="large")
+with left:
+    if demand_improvement is not None and demand_case_delay is not None:
+        option_card(
+            label="Operational strategy · Peak-hour demand",
+            title=f"20% planning scenario → estimated average delay reduced by {demand_improvement:.0f}%",
+            body=(
+                f"Under the 20% demand-reduction scenario, average delay falls to approximately {demand_case_delay:.1f} minutes per vehicle. This provides a useful planning benchmark for understanding how demand-management measures could improve network performance."
+            ),
+        )
+    else:
+        option_card(
+            label="Operational strategy · Peak-hour demand",
+            title="Comparison results pending",
+            body="Complete the demand assessment to compare practical peak-hour planning cases.",
+        )
+    st.page_link(
+        "pages/experiments/1_run_demand_reduction.py",
+        label="Review peak-hour demand strategy",
+        icon=":material/arrow_forward:",
+    )
+
+with right:
+    if connector_improvement is not None:
+        option_card(
+            label="Infrastructure strategy · Network improvement",
+            title=f"Strongest concept → estimated {connector_improvement:.0f}% performance improvement",
+            body=(
+                f"The strongest tested infrastructure concept improves network performance by approximately 17%, with the most promising opportunity identified near {connector_area}. The concept should now be assessed for feasibility, safety, land requirements, cost, and constructability."
+                "It warrants professional feasibility review before any route or alignment is considered."
+            ),
+            accent="violet",
+        )
+    else:
+        option_card(
+            label="Infrastructure strategy · Network improvement",
+            title="Concept comparison pending",
+            body="Complete the network improvement assessment to compare distinct relief concepts.",
+            accent="violet",
+        )
+    st.page_link(
+        "pages/experiments/2_run_bottleneck_bypass.py",
+        label="Review network improvements",
+        icon=":material/arrow_forward:",
+    )
+
+if not corridors.empty:
+    st.subheader("Where network pressure is concentrated")
+    st.caption(
+        "A relatively small number of corridors account for a substantial share of the estimated network-wide delay, helping identify where further investigation and targeted intervention may have the greatest value."
+    )
+    st.plotly_chart(make_corridor_chart(corridors.head(5)), width="stretch")
+
+st.subheader("Recommended next steps")
+next_columns = st.columns(3, gap="medium")
+with next_columns[0]:
+    option_card(
+        label="01 · Confirm",
+        title="Strengthen the evidence base",
+        body="Validate the model findings with counts, turning-movement observations, and measured travel times along the highest-priority corridors.",
+    )
+with next_columns[1]:
+    option_card(
+        label="02 · Develop",
+        title="Turn findings into viable options",
+        body="Use the demand scenarios as planning bounds and develop the strongest network concepts into comparable options, incorporating engineering, safety, land, cost, and delivery considerations.",
+    )
+with next_columns[2]:
+    option_card(
+        label="03 · Decide",
+        title="Build an investment-ready shortlist",
+        body="Combine the modelling results with local evidence and feasibility findings to identify the options best suited for detailed assessment, approval, and potential delivery.",
+        accent="violet",
+    )
