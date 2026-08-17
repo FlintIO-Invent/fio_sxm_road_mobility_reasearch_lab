@@ -1,0 +1,22 @@
+{
+  "created_at_utc": "2026-08-17T21:37:38.637147+00:00",
+  "research_status": "experimental sandbox",
+  "figure_mode": "analysis",
+  "run_scenarios": false,
+  "run_sensitivity": false,
+  "run_centrality": false,
+  "analysis_graph": "data/processed/base/graph.graphml",
+  "analysis_graph_sha256": "2a27930fceeb20a884bafb87ac753feac36811242d1a7b908b1104c5e6b7468a",
+  "od_file": "data/processed/runs/baseline__20260718_0143/od.parquet",
+  "od_sha256": "f12afd36e78b7d42e64e863e56372ff44bf8ccc6c7bf84eb93ce07effb1150a8",
+  "pinned_baseline_run": "baseline__20260718_0143",
+  "assignment": {
+    "msa_iterations": 30,
+    "bpr_alpha": 0.15,
+    "bpr_beta": 4.0
+  },
+  "cohort_integrity_gate": true,
+  "baseline_reproduction_gate": true,
+  "production_bundle_match": false,
+  "scientific_disclaimer": "Modeled results using synthetic demand \u2014 not observed traffic counts. Uncalibrated screening model; assumed capacities and free-flow speeds. Road network \u00a9 OpenStreetMap contributors."
+}

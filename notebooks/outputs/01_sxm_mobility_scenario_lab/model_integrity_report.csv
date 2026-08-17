@@ -1,0 +1,10 @@
+scope,check,passed,detail,status
+analysis cohort,Pinned artifact hashes match audited cohort,True,5 files checked,PASS
+analysis cohort,GraphML nodes match node table,True,"1,965 vs 1,965",PASS
+analysis cohort,GraphML edges match edge table,True,"4,423 vs 4,423",PASS
+analysis cohort,Pinned OD endpoints and demand valid,True,250/250 valid,PASS
+analysis cohort,Positive finite t0 and capacity,True,"4,423 edges checked",PASS
+analysis cohort,Node coordinates available,True,"1,965 nodes checked",PASS
+analysis cohort,Directed graph strongly connected,True,all OD pairs have a network path,PASS
+production bundle,gpickle matches pinned GraphML nodes,False,"1,961 vs 1,965",FAIL
+production bundle,gpickle matches pinned GraphML edges,False,"4,419 vs 4,423",FAIL

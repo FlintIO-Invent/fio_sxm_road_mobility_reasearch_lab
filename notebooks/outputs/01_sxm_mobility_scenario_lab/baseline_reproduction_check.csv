@@ -1,0 +1,5 @@
+metric,saved,recomputed,absolute_difference,passed
+TSTT (vehicle-hours),7589.972210864339,7589.972210864339,0.0,True
+Modeled delay (vehicle-hours),3864.6715808951835,3864.6715808951835,0.0,True
+Average trip time (min/vehicle),18.21593330607441,18.215933306074415,3.552713678800501e-15,True
+Average delay (min/vehicle),9.27521179414844,9.27521179414844,0.0,True

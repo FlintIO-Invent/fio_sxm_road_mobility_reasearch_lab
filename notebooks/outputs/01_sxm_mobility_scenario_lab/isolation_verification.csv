@@ -1,0 +1,8 @@
+verification,result
+Streamlit files modified,NO
+Production Python modules modified,NO
+Base data overwritten,NO
+Existing run artifacts overwritten,NO
+Notebook output isolated,YES
+Notebook imports production modeling code,YES
+Production application imports notebook code,NO
